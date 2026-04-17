@@ -1,0 +1,11 @@
+# CREEPER OSINT Scraper — Python dependencies
+aiohttp>=3.9.0
+beautifulsoup4>=4.12.0
+rich>=13.7.0
+lxml>=5.0.0
+
+# Web server (for GUI mode)
+flask>=3.0.0
+
+# Optional — JS rendering
+playwright>=1.43.0
