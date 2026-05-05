@@ -1,1499 +1,1025 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CREEPER — OSINT Scraper · Split View</title>
-  <link
-    href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;700;900&display=swap"
-    rel="stylesheet">
-  <style>
-    :root {
-      --bg: #050a0f;
-      --bg2: #080f18;
-      --bg3: #0c1825;
-      --panel: #0a141f;
-      --border: #1a3a5c;
-      --border2: #0f2540;
-      --accent: #00d4ff;
-      --accent2: #ff6b35;
-      --accent3: #39ff14;
-      --accent4: #c678dd;
-      --text: #c8d8e8;
-      --text-dim: #4a6a8a;
-      --text-bright: #e8f4ff;
-      --danger: #ff3b5c;
-      --warn: #ffb347;
-      --hit: #39ff14;
-      --glow: 0 0 20px rgba(0, 212, 255, 0.3);
-      --glow2: 0 0 20px rgba(255, 107, 53, 0.3);
-      --glow-green: 0 0 20px rgba(57, 255, 20, 0.25);
-    }
-
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Rajdhani', sans-serif;
-      font-size: 15px;
-      min-height: 100vh;
-      overflow: hidden;
-    }
-
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background-image:
-        linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
-      background-size: 40px 40px;
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    body::after {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0, 0, 0, 0.06) 2px, rgba(0, 0, 0, 0.06) 4px);
-      pointer-events: none;
-      z-index: 1;
-    }
-
-    /* SPLIT VIEW LAYOUT - ONLY LAYOUT CHANGED, NOTHING REMOVED */
-    .split-layout {
-      position: relative;
-      z-index: 2;
-      display: flex;
-      height: 100vh;
-      width: 100%;
-    }
-
-    /* LEFT PANEL - ALL INPUTS/CONTROLS (SCROLLABLE) */
-    .left-panel {
-      width: 48%;
-      min-width: 420px;
-      overflow-y: auto;
-      padding: 20px 20px 30px 20px;
-      border-right: 2px solid var(--border);
-      background: rgba(5, 10, 15, 0.6);
-      backdrop-filter: blur(1px);
-    }
-
-    /* RIGHT PANEL - ALL OUTPUTS (SCROLLABLE) */
-    .right-panel {
-      flex: 1;
-      overflow-y: auto;
-      padding: 20px 24px 30px 24px;
-      background: var(--bg);
-    }
-
-    /* ALL ORIGINAL STYLES PRESERVED BELOW - NO CHANGES */
-    .container {
-      max-width: 100%;
-      margin: 0;
-      padding: 0;
-    }
-
-    .header {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      padding: 20px 0 28px;
-      border-bottom: 1px solid var(--border2);
-      margin-bottom: 32px;
-    }
-
-    .logo-icon {
-      width: 52px;
-      height: 52px;
-      flex-shrink: 0;
-    }
-
-    .logo-icon svg {
-      width: 100%;
-      height: 100%;
-    }
-
-    .header-text h1 {
-      font-family: 'Orbitron', monospace;
-      font-size: 28px;
-      font-weight: 900;
-      letter-spacing: 4px;
-      background: linear-gradient(90deg, var(--accent), var(--accent4));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    .header-text p {
-      color: var(--text-dim);
-      font-size: 12px;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      margin-top: 4px;
-    }
-
-    .version-badge {
-      margin-left: auto;
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 11px;
-      color: var(--accent3);
-      border: 1px solid rgba(57, 255, 20, 0.3);
-      padding: 4px 10px;
-      border-radius: 3px;
-      background: rgba(57, 255, 20, 0.05);
-      letter-spacing: 1px;
-    }
-
-    .panel {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 20px 24px;
-      margin-bottom: 20px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .panel::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 2px;
-      background: linear-gradient(90deg, var(--accent), transparent);
-    }
-
-    .panel-title {
-      font-family: 'Orbitron', monospace;
-      font-size: 11px;
-      letter-spacing: 3px;
-      color: var(--accent);
-      text-transform: uppercase;
-      margin-bottom: 16px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .panel-title .dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--accent);
-      box-shadow: 0 0 8px var(--accent);
-      flex-shrink: 0;
-    }
-
-    .field-group {
-      margin-bottom: 16px;
-    }
-
-    label {
-      display: block;
-      font-size: 11px;
-      letter-spacing: 2px;
-      color: var(--text-dim);
-      text-transform: uppercase;
-      margin-bottom: 6px;
-    }
-
-    input[type="text"],
-    input[type="number"],
-    select,
-    textarea {
-      width: 100%;
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      color: var(--text-bright);
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 14px;
-      padding: 10px 14px;
-      border-radius: 4px;
-      outline: none;
-      transition: border-color 0.2s, box-shadow 0.2s;
-    }
-
-    input[type="text"]:focus,
-    input[type="number"]:focus,
-    select:focus,
-    textarea:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 2px rgba(0, 212, 255, 0.1);
-    }
-
-    input[type="text"]::placeholder,
-    textarea::placeholder {
-      color: var(--text-dim);
-      opacity: 0.6;
-    }
-
-    textarea {
-      resize: vertical;
-      min-height: 80px;
-      line-height: 1.6;
-    }
-
-    select option {
-      background: var(--bg2);
-    }
-
-    .grid-2 {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-    }
-
-    .grid-3 {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 16px;
-    }
-
-    .grid-4 {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 16px;
-    }
-
-    @media (max-width: 700px) {
-
-      .grid-2,
-      .grid-3,
-      .grid-4 {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    .toggle-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-top: 4px;
-    }
-
-    .toggle-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      cursor: pointer;
-      user-select: none;
-    }
-
-    .toggle-item input[type="checkbox"] {
-      display: none;
-    }
-
-    .toggle-box {
-      width: 38px;
-      height: 20px;
-      border-radius: 10px;
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      position: relative;
-      transition: background 0.2s, border-color 0.2s;
-    }
-
-    .toggle-box::after {
-      content: '';
-      position: absolute;
-      left: 3px;
-      top: 3px;
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      background: var(--text-dim);
-      transition: left 0.2s, background 0.2s;
-    }
-
-    .toggle-item input:checked+.toggle-box {
-      background: rgba(0, 212, 255, 0.15);
-      border-color: var(--accent);
-    }
-
-    .toggle-item input:checked+.toggle-box::after {
-      left: 21px;
-      background: var(--accent);
-      box-shadow: 0 0 6px var(--accent);
-    }
-
-    .toggle-label {
-      font-size: 13px;
-      color: var(--text);
-      letter-spacing: 0.5px;
-    }
-
-    .panel.regex-panel::before {
-      background: linear-gradient(90deg, var(--accent4), transparent);
-    }
-
-    .panel.regex-panel .panel-title {
-      color: var(--accent4);
-    }
-
-    .panel.regex-panel .panel-title .dot {
-      background: var(--accent4);
-      box-shadow: 0 0 8px var(--accent4);
-    }
-
-    .regex-tags-area {
-      min-height: 52px;
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 8px 10px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      align-items: center;
-      cursor: text;
-      transition: border-color 0.2s;
-    }
-
-    .regex-tags-area:focus-within {
-      border-color: var(--accent4);
-      box-shadow: 0 0 0 2px rgba(198, 120, 221, 0.12);
-    }
-
-    .regex-tag {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: rgba(198, 120, 221, 0.12);
-      border: 1px solid rgba(198, 120, 221, 0.4);
-      color: var(--accent4);
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 12px;
-      padding: 3px 8px;
-      border-radius: 3px;
-      white-space: nowrap;
-    }
-
-    .regex-tag.invalid {
-      background: rgba(255, 59, 92, 0.1);
-      border-color: rgba(255, 59, 92, 0.4);
-      color: var(--danger);
-    }
-
-    .regex-tag-remove {
-      cursor: pointer;
-      opacity: 0.6;
-      font-size: 14px;
-      line-height: 1;
-      transition: opacity 0.15s;
-    }
-
-    .regex-tag-remove:hover {
-      opacity: 1;
-    }
-
-    .regex-input {
-      flex: 1;
-      min-width: 160px;
-      background: transparent;
-      border: none;
-      color: var(--text-bright);
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 13px;
-      outline: none;
-      padding: 2px 4px;
-    }
-
-    .regex-hint {
-      font-size: 11px;
-      color: var(--text-dim);
-      margin-top: 6px;
-      letter-spacing: 0.3px;
-    }
-
-    .preset-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-top: 10px;
-    }
-
-    .preset-btn {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 11px;
-      color: var(--text-dim);
-      border: 1px solid var(--border);
-      background: transparent;
-      padding: 4px 10px;
-      border-radius: 3px;
-      cursor: pointer;
-      transition: color 0.15s, border-color 0.15s, background 0.15s;
-    }
-
-    .preset-btn:hover {
-      color: var(--accent4);
-      border-color: var(--accent4);
-      background: rgba(198, 120, 221, 0.06);
-    }
-
-    .preset-group-label {
-      font-size: 10px;
-      letter-spacing: 1.5px;
-      color: var(--text-dim);
-      text-transform: uppercase;
-      padding: 4px 0 2px;
-      width: 100%;
-      border-top: 1px solid var(--border2);
-      margin-top: 6px;
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 11px 24px;
-      border-radius: 4px;
-      font-family: 'Orbitron', monospace;
-      font-size: 12px;
-      letter-spacing: 2px;
-      font-weight: 700;
-      cursor: pointer;
-      border: none;
-      transition: all 0.2s;
-      text-transform: uppercase;
-    }
-
-    .btn-primary {
-      background: linear-gradient(135deg, rgba(0, 212, 255, 0.15), rgba(0, 212, 255, 0.08));
-      color: var(--accent);
-      border: 1px solid var(--accent);
-      box-shadow: var(--glow);
-    }
-
-    .btn-primary:hover:not(:disabled) {
-      background: rgba(0, 212, 255, 0.25);
-      box-shadow: 0 0 30px rgba(0, 212, 255, 0.5);
-      transform: translateY(-1px);
-    }
-
-    .btn-primary:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
-
-    .btn-danger {
-      background: rgba(255, 59, 92, 0.1);
-      color: var(--danger);
-      border: 1px solid var(--danger);
-    }
-
-    .btn-danger:hover {
-      background: rgba(255, 59, 92, 0.2);
-    }
-
-    .btn-save {
-      background: linear-gradient(135deg, rgba(57, 255, 20, 0.12), rgba(57, 255, 20, 0.06));
-      color: var(--accent3);
-      border: 1px solid var(--accent3);
-      box-shadow: var(--glow-green);
-      font-size: 11px;
-      padding: 9px 18px;
-    }
-
-    .btn-save:hover {
-      background: rgba(57, 255, 20, 0.2);
-      box-shadow: 0 0 25px rgba(57, 255, 20, 0.4);
-    }
-
-    .btn-copy {
-      background: rgba(198, 120, 221, 0.08);
-      color: var(--accent4);
-      border: 1px solid rgba(198, 120, 221, 0.4);
-      font-size: 11px;
-      padding: 9px 18px;
-      letter-spacing: 1.5px;
-    }
-
-    .btn-copy:hover {
-      background: rgba(198, 120, 221, 0.16);
-    }
-
-    .btn-sm {
-      padding: 7px 14px;
-      font-size: 10px;
-    }
-
-    .action-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin-top: 8px;
-    }
-
-    .progress-bar-outer {
-      height: 4px;
-      background: var(--bg2);
-      border-radius: 2px;
-      overflow: hidden;
-      margin: 12px 0 6px;
-    }
-
-    .progress-bar-inner {
-      height: 100%;
-      background: linear-gradient(90deg, var(--accent), var(--accent4));
-      border-radius: 2px;
-      width: 0%;
-      transition: width 0.3s;
-      box-shadow: 0 0 8px rgba(0, 212, 255, 0.6);
-    }
-
-    .progress-label {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 11px;
-      color: var(--text-dim);
-    }
-
-    .stats-row {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-      gap: 12px;
-      margin: 16px 0;
-    }
-
-    .stat-card {
-      background: var(--bg2);
-      border: 1px solid var(--border2);
-      border-radius: 5px;
-      padding: 12px 14px;
-      text-align: center;
-    }
-
-    .stat-card.hit-card {
-      border-color: rgba(57, 255, 20, 0.4);
-      background: rgba(57, 255, 20, 0.04);
-      box-shadow: 0 0 12px rgba(57, 255, 20, 0.1);
-    }
-
-    .stat-value {
-      font-family: 'Orbitron', monospace;
-      font-size: 22px;
-      font-weight: 700;
-      color: var(--accent);
-    }
-
-    .stat-card.hit-card .stat-value {
-      color: var(--hit);
-    }
-
-    .stat-label {
-      font-size: 10px;
-      letter-spacing: 1.5px;
-      color: var(--text-dim);
-      text-transform: uppercase;
-      margin-top: 4px;
-    }
-
-    .tabs {
-      display: flex;
-      gap: 0;
-      border-bottom: 1px solid var(--border);
-      margin-bottom: 20px;
-      overflow-x: auto;
-    }
-
-    .tab {
-      font-family: 'Orbitron', monospace;
-      font-size: 10px;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      padding: 10px 18px;
-      cursor: pointer;
-      color: var(--text-dim);
-      border-bottom: 2px solid transparent;
-      white-space: nowrap;
-      transition: color 0.15s, border-color 0.15s;
-      user-select: none;
-    }
-
-    .tab:hover {
-      color: var(--text);
-    }
-
-    .tab.active {
-      color: var(--accent);
-      border-bottom-color: var(--accent);
-    }
-
-    .tab.has-hits {
-      color: var(--hit);
-    }
-
-    .tab.has-hits.active {
-      border-bottom-color: var(--hit);
-    }
-
-    .tab-count {
-      display: inline-block;
-      background: rgba(0, 212, 255, 0.15);
-      color: var(--accent);
-      font-size: 9px;
-      padding: 1px 6px;
-      border-radius: 10px;
-      margin-left: 4px;
-    }
-
-    .tab.has-hits .tab-count {
-      background: rgba(57, 255, 20, 0.15);
-      color: var(--hit);
-    }
-
-    .tab-pane {
-      display: none;
-    }
-
-    .tab-pane.active {
-      display: block;
-    }
-
-    .hits-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 14px;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-
-    .hits-title {
-      font-family: 'Orbitron', monospace;
-      font-size: 12px;
-      letter-spacing: 2px;
-      color: var(--hit);
-    }
-
-    .hits-actions {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .hit-row {
-      background: var(--bg2);
-      border: 1px solid rgba(57, 255, 20, 0.2);
-      border-radius: 5px;
-      padding: 14px 16px;
-      margin-bottom: 10px;
-      transition: border-color 0.2s;
-    }
-
-    .hit-row:hover {
-      border-color: rgba(57, 255, 20, 0.5);
-    }
-
-    .hit-url {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 13px;
-      color: var(--accent);
-      word-break: break-all;
-      margin-bottom: 6px;
-      display: flex;
-      align-items: flex-start;
-      gap: 8px;
-    }
-
-    .hit-url a {
-      color: var(--accent);
-      text-decoration: none;
-    }
-
-    .hit-url a:hover {
-      text-decoration: underline;
-      color: #80eeff;
-    }
-
-    .hit-title {
-      font-size: 12px;
-      color: var(--text-dim);
-      margin-bottom: 8px;
-      font-style: italic;
-    }
-
-    .hit-patterns {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-bottom: 8px;
-    }
-
-    .hit-pattern-tag {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 11px;
-      background: rgba(198, 120, 221, 0.1);
-      border: 1px solid rgba(198, 120, 221, 0.35);
-      color: var(--accent4);
-      padding: 2px 8px;
-      border-radius: 3px;
-    }
-
-    .hit-match {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 12px;
-      color: var(--hit);
-      background: rgba(57, 255, 20, 0.05);
-      border-left: 3px solid rgba(57, 255, 20, 0.4);
-      padding: 4px 10px;
-      margin: 4px 0;
-      border-radius: 0 3px 3px 0;
-      word-break: break-all;
-    }
-
-    .hit-context {
-      font-size: 11px;
-      color: var(--text-dim);
-      margin-top: 3px;
-      padding-left: 13px;
-      font-style: italic;
-      word-break: break-all;
-    }
-
-    .hit-count-badge {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 10px;
-      background: rgba(57, 255, 20, 0.08);
-      border: 1px solid rgba(57, 255, 20, 0.25);
-      color: var(--hit);
-      padding: 1px 6px;
-      border-radius: 10px;
-      flex-shrink: 0;
-    }
-
-    .no-hits {
-      text-align: center;
-      padding: 40px;
-      color: var(--text-dim);
-      font-size: 13px;
-      letter-spacing: 1px;
-    }
-
-    .no-hits .big {
-      font-size: 32px;
-      margin-bottom: 10px;
-    }
-
-    .data-list {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 12px;
-      color: var(--text);
-      line-height: 1.9;
-      max-height: 400px;
-      overflow-y: auto;
-    }
-
-    .data-list a {
-      color: var(--accent);
-      text-decoration: none;
-    }
-
-    .data-list a:hover {
-      text-decoration: underline;
-    }
-
-    .data-list-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 8px;
-      padding: 4px 0;
-      border-bottom: 1px solid rgba(26, 58, 92, 0.3);
-    }
-
-    .item-icon {
-      color: var(--text-dim);
-      flex-shrink: 0;
-    }
-
-    .item-text {
-      word-break: break-all;
-      flex: 1;
-    }
-
-    .item-badge {
-      font-size: 10px;
-      background: rgba(0, 212, 255, 0.08);
-      border: 1px solid rgba(0, 212, 255, 0.2);
-      color: var(--accent);
-      padding: 1px 6px;
-      border-radius: 3px;
-      flex-shrink: 0;
-    }
-
-    .tech-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 10px;
-      margin-bottom: 14px;
-    }
-
-    .tech-card {
-      background: var(--bg2);
-      border: 1px solid var(--border2);
-      border-radius: 4px;
-      padding: 10px 14px;
-    }
-
-    .tech-card-label {
-      font-size: 10px;
-      letter-spacing: 2px;
-      color: var(--text-dim);
-      text-transform: uppercase;
-      margin-bottom: 4px;
-    }
-
-    .tech-card-value {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 13px;
-      color: var(--accent3);
-      word-break: break-all;
-    }
-
-    .tech-card-value.empty {
-      color: var(--text-dim);
-      font-style: italic;
-    }
-
-    .log-box {
-      background: #020509;
-      border: 1px solid var(--border2);
-      border-radius: 4px;
-      padding: 12px 14px;
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 12px;
-      color: var(--accent3);
-      max-height: 400px;
-      overflow-y: auto;
-      line-height: 1.7;
-    }
-
-    .log-entry {
-      color: var(--text-dim);
-    }
-
-    .log-entry.info {
-      color: var(--accent);
-    }
-
-    .log-entry.warn {
-      color: var(--warn);
-    }
-
-    .log-entry.error {
-      color: var(--danger);
-    }
-
-    .log-entry.hit {
-      color: var(--hit);
-      font-weight: bold;
-    }
-
-    .log-entry.done {
-      color: var(--accent3);
-    }
-
-    ::-webkit-scrollbar {
-      width: 5px;
-      height: 5px;
-    }
-
-    ::-webkit-scrollbar-track {
-      background: var(--bg2);
-    }
-
-    ::-webkit-scrollbar-thumb {
-      background: var(--border);
-      border-radius: 3px;
-    }
-
-    ::-webkit-scrollbar-thumb:hover {
-      background: var(--accent);
-    }
-
-    .section-title {
-      font-family: 'Orbitron', monospace;
-      font-size: 10px;
-      letter-spacing: 3px;
-      color: var(--text-dim);
-      text-transform: uppercase;
-      margin: 20px 0 10px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .section-title::after {
-      content: '';
-      flex: 1;
-      height: 1px;
-      background: var(--border2);
-    }
-
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
-      }
-    }
-/* Hide default spinner arrows */
-input[type="number"]::-webkit-inner-spin-button,
-input[type="number"]::-webkit-outer-spin-button {
-  opacity: 0;
-  pointer-events: none;
-  height: auto;
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CREEPER v3 — Bug Hunt Recon</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:    #050a0f; --bg2: #080f18; --bg3: #0c1825;
+  --panel: #0a141f; --border: #1a3a5c; --border2: #0f2540;
+  --cyan:  #00d4ff; --purple: #c678dd; --green: #39ff14;
+  --red:   #ff3b5c; --yellow: #ffb347; --orange: #ff6b35;
+  --text:  #c8d8e8; --dim: #4a6a8a; --bright: #e8f4ff;
+  --glow-c: 0 0 20px rgba(0,212,255,.3);
+  --glow-g: 0 0 20px rgba(57,255,20,.25);
+  --glow-r: 0 0 20px rgba(255,59,92,.3);
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+html{height:100%;overflow:hidden}
+body{
+  height:100%; margin:0;
+  background:var(--bg); color:var(--text);
+  font-family:'Rajdhani',sans-serif; font-size:15px;
+  overflow:hidden;
+}
+body::before{
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background-image:
+    linear-gradient(rgba(0,212,255,.025) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(0,212,255,.025) 1px,transparent 1px);
+  background-size:44px 44px;
+}
+body::after{
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:1;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.04) 2px,rgba(0,0,0,.04) 4px);
 }
 
-/* For Firefox */
-input[type="number"] {
-  -moz-appearance: textfield;
-  appearance: textfield;
+/* ── Layout ───────────────────────────────────── */
+.wrap{position:relative;z-index:2;display:flex;height:100vh;width:100%;overflow:hidden}
+.left{
+  width:440px; min-width:0; max-width:500px; flex-shrink:0;
+  border-right:2px solid var(--border);
+  background:rgba(5,10,15,.92);
+  backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  display:flex; flex-direction:column;
+  height:100vh; min-height:0; overflow:hidden;
 }
-    .spinner {
-      width: 16px;
-      height: 16px;
-      border: 2px solid rgba(0, 212, 255, 0.2);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      flex-shrink: 0;
-    }
+.left-scroll{
+  flex:1 1 0%;
+  overflow-y:auto; overflow-x:hidden;
+  padding:16px 18px 24px;
+  min-height:0;
+}
+.left-scroll > *{margin-bottom:12px}
+.left-scroll > *:last-child{margin-bottom:0}
+.left-footer{
+  padding:14px 18px; border-top:1px solid var(--border2);
+  background:rgba(8,15,24,.95); flex-shrink:0; z-index:10;
+}
+.right{
+  flex:1 1 0%; min-width:0; min-height:0;
+  overflow:hidden; display:flex; flex-direction:column; padding:16px 20px;
+}
 
-    @keyframes pulse {
+/* ── Responsive ──────────────────────────────── */
+@media (max-width: 960px) {
+  .wrap{flex-direction:column;height:auto;min-height:100vh}
+  .left{
+    width:100%; max-width:100%; height:auto; max-height:55vh;
+    border-right:none; border-bottom:2px solid var(--border);
+  }
+  .left-scroll{max-height:calc(55vh - 100px)}
+  .right{height:45vh; min-height:300px}
+}
+@media (max-width: 600px) {
+  .left{max-height:60vh}
+  .left-scroll{max-height:calc(60vh - 90px);padding:12px 14px 18px}
+  .right{padding:10px 12px}
+  .hdr h1{font-size:16px;letter-spacing:2px}
+  .g4{grid-template-columns:1fr 1fr;gap:8px}
+  .stats{grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:5px}
+}
 
-      0%,
-      100% {
-        opacity: 1;
-        transform: scale(1);
-      }
+/* scrollbar */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--cyan)}
+.left-scroll{scroll-behavior:smooth}
 
-      50% {
-        opacity: 0.4;
-        transform: scale(0.8);
-      }
-    }
+/* ── Header ───────────────────────────────────── */
+.hdr{
+  display:flex;align-items:center;gap:12px;
+  padding:14px 18px 12px;
+  border-bottom:1px solid var(--border2);
+  flex-shrink:0;
+}
+.hdr svg{width:42px;height:42px;flex-shrink:0}
+.hdr h1{
+  font-family:'Orbitron',monospace;font-size:22px;font-weight:900;letter-spacing:4px;
+  background:linear-gradient(90deg,var(--cyan),var(--purple));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.hdr p{color:var(--dim);font-size:10px;letter-spacing:2px;text-transform:uppercase;margin-top:2px}
+.ver{
+  margin-left:auto;font-family:'Share Tech Mono',monospace;font-size:9px;
+  color:var(--green);border:1px solid rgba(57,255,20,.3);padding:3px 7px;
+  border-radius:3px;background:rgba(57,255,20,.04);letter-spacing:1px;white-space:nowrap;flex-shrink:0;
+}
 
-    .pulse {
-      animation: pulse 1.2s ease-in-out infinite;
-    }
+/* ── Panel card ───────────────────────────────── */
+.card{
+  background:var(--panel);border:1px solid var(--border);
+  border-radius:6px;padding:14px 16px;position:relative;overflow:hidden;
+  flex-shrink:0; /* ← prevent cards from squishing inside flex scroll */
+}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--cyan),transparent)}
+.card.red::before{background:linear-gradient(90deg,var(--red),transparent)}
+.card.purple::before{background:linear-gradient(90deg,var(--purple),transparent)}
+.card.green::before{background:linear-gradient(90deg,var(--green),transparent)}
+.card-title{
+  font-family:'Orbitron',monospace;font-size:9px;letter-spacing:3px;
+  text-transform:uppercase;color:var(--cyan);margin-bottom:12px;
+  display:flex;align-items:center;gap:7px;
+}
+.card.red    .card-title{color:var(--red)}
+.card.purple .card-title{color:var(--purple)}
+.card.green  .card-title{color:var(--green)}
+.cdot{width:5px;height:5px;border-radius:50%;background:var(--cyan);box-shadow:0 0 6px var(--cyan);flex-shrink:0}
+.card.red    .cdot{background:var(--red);box-shadow:0 0 6px var(--red)}
+.card.purple .cdot{background:var(--purple);box-shadow:0 0 6px var(--purple)}
+.card.green  .cdot{background:var(--green);box-shadow:0 0 6px var(--green)}
 
-    [data-tip] {
-      position: relative;
-      cursor: help;
-    }
+/* ── Form elements ────────────────────────────── */
+.field{margin-bottom:10px}
+.field:last-child{margin-bottom:0}
+label{display:block;font-size:10px;letter-spacing:1.5px;color:var(--dim);text-transform:uppercase;margin-bottom:4px}
+input[type=text],input[type=number],textarea,select{
+  width:100%;background:var(--bg2);border:1px solid var(--border);
+  color:var(--bright);font-family:'Share Tech Mono',monospace;font-size:12px;
+  padding:7px 10px;border-radius:4px;outline:none;transition:border-color .15s,box-shadow .15s;
+}
+input:focus,textarea:focus,select:focus{border-color:var(--cyan);box-shadow:0 0 0 2px rgba(0,212,255,.1)}
+input::placeholder,textarea::placeholder{color:var(--dim);opacity:.5}
+textarea{resize:vertical;min-height:60px;line-height:1.6}
+select option{background:var(--bg2)}
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button{opacity:0;pointer-events:none}
+input[type=number]{-moz-appearance:textfield;appearance:textfield}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 
-    [data-tip]::after {
-      content: attr(data-tip);
-      position: absolute;
-      bottom: calc(100% + 6px);
-      left: 50%;
-      transform: translateX(-50%);
-      background: #1a3050;
-      border: 1px solid var(--border);
-      color: var(--text-bright);
-      font-size: 11px;
-      padding: 4px 10px;
-      border-radius: 3px;
-      white-space: nowrap;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.15s;
-      z-index: 100;
-    }
+/* ── Toggles ──────────────────────────────────── */
+.trow{display:flex;flex-wrap:wrap;gap:8px}
+.tog{display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
+.tog input{display:none}
+.tbox{
+  width:30px;height:16px;border-radius:8px;
+  background:var(--bg2);border:1px solid var(--border);position:relative;transition:.15s;
+}
+.tbox::after{
+  content:'';position:absolute;left:2px;top:2px;
+  width:10px;height:10px;border-radius:50%;background:var(--dim);transition:.15s;
+}
+.tog input:checked+.tbox{background:rgba(0,212,255,.12);border-color:var(--cyan)}
+.tog input:checked+.tbox::after{left:16px;background:var(--cyan);box-shadow:0 0 5px var(--cyan)}
+.tog-lbl{font-size:12px;color:var(--text)}
 
-    [data-tip]:hover::after {
-      opacity: 1;
-    }
+/* ── Regex tag area ───────────────────────────── */
+.regex-area{
+  min-height:42px;background:var(--bg2);border:1px solid var(--border);
+  border-radius:4px;padding:6px 8px;display:flex;flex-wrap:wrap;
+  gap:4px;align-items:center;cursor:text;transition:.15s;
+}
+.regex-area:focus-within{border-color:var(--purple);box-shadow:0 0 0 2px rgba(198,120,221,.1)}
+.rtag{
+  display:inline-flex;align-items:center;gap:4px;
+  background:rgba(198,120,221,.1);border:1px solid rgba(198,120,221,.3);
+  color:var(--purple);font-family:'Share Tech Mono',monospace;
+  font-size:10px;padding:2px 6px;border-radius:3px;white-space:nowrap;
+}
+.rtag.bad{background:rgba(255,59,92,.1);border-color:rgba(255,59,92,.3);color:var(--red)}
+.rx{cursor:pointer;opacity:.6;font-size:12px;line-height:1;transition:.1s}
+.rx:hover{opacity:1}
+.ri{
+  flex:1;min-width:120px;background:transparent;border:none;
+  color:var(--bright);font-family:'Share Tech Mono',monospace;font-size:11px;
+  outline:none;padding:2px 2px;
+}
+.hint{font-size:10px;color:var(--dim);margin-top:4px}
 
-    .pattern-summary {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-bottom: 14px;
-    }
+/* ── Presets ──────────────────────────────────── */
+.psep{
+  font-family:'Orbitron',monospace;font-size:8px;letter-spacing:2px;
+  color:var(--dim);text-transform:uppercase;margin:10px 0 5px;
+  display:flex;align-items:center;gap:6px;
+}
+.psep::after{content:'';flex:1;height:1px;background:var(--border2)}
+.prow{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px}
+.pb{
+  font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim);
+  border:1px solid var(--border);background:transparent;
+  padding:2px 8px;border-radius:3px;cursor:pointer;transition:.12s;
+}
+.pb:hover{color:var(--purple);border-color:var(--purple);background:rgba(198,120,221,.06)}
+.pb.clr{color:var(--red);border-color:rgba(255,59,92,.3)}
+.pb.clr:hover{background:rgba(255,59,92,.08)}
 
-    .pattern-stat {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 6px 12px;
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 12px;
-    }
+/* ── KV header rows ───────────────────────────── */
+.kvlist{display:flex;flex-direction:column;gap:5px}
+.kvrow{display:flex;gap:5px;align-items:center}
+.kvrow input{font-size:11px;padding:5px 8px}
+.kvrow input:first-child{flex:0 0 110px}
+.kvrow input:last-of-type{flex:1}
+.kv-add{
+  font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--green);
+  border:1px solid rgba(57,255,20,.3);background:transparent;
+  padding:3px 9px;border-radius:3px;cursor:pointer;margin-top:3px;transition:.12s;
+}
+.kv-add:hover{background:rgba(57,255,20,.08)}
+.kvdel{
+  background:transparent;border:none;color:var(--dim);
+  font-size:15px;cursor:pointer;flex-shrink:0;transition:.12s;padding:0 1px;line-height:1;
+}
+.kvdel:hover{color:var(--red)}
 
-    .pattern-stat .p-name {
-      color: var(--accent4);
-    }
+/* ── CLI box ──────────────────────────────────── */
+.cli{
+  background:#020509;border:1px solid var(--border2);border-radius:4px;
+  padding:8px 10px;font-family:'Share Tech Mono',monospace;
+  font-size:10px;color:var(--green);max-height:56px;
+  overflow-y:auto;line-height:1.7;white-space:pre-wrap;word-break:break-all;
+}
 
-    .pattern-stat .p-count {
-      color: var(--hit);
-      font-weight: bold;
-    }
+/* ── Buttons ──────────────────────────────────── */
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:9px 18px;border-radius:4px;border:none;cursor:pointer;
+  font-family:'Orbitron',monospace;font-size:10px;letter-spacing:2px;
+  font-weight:700;text-transform:uppercase;transition:.15s;
+}
+.btn-start{
+  background:linear-gradient(135deg,rgba(0,212,255,.14),rgba(0,212,255,.07));
+  color:var(--cyan);border:1px solid var(--cyan);box-shadow:var(--glow-c);
+}
+.btn-start:hover:not(:disabled){background:rgba(0,212,255,.22);transform:translateY(-1px);box-shadow:0 0 28px rgba(0,212,255,.5)}
+.btn-start:disabled{opacity:.35;cursor:not-allowed}
+.btn-stop{background:rgba(255,59,92,.1);color:var(--red);border:1px solid var(--red)}
+.btn-stop:hover{background:rgba(255,59,92,.2)}
+.btn-sm{padding:5px 12px;font-size:9px}
+.btn-copy{background:rgba(198,120,221,.07);color:var(--purple);border:1px solid rgba(198,120,221,.3)}
+.btn-copy:hover{background:rgba(198,120,221,.14)}
+.btn-save{background:linear-gradient(135deg,rgba(57,255,20,.09),rgba(57,255,20,.04));color:var(--green);border:1px solid var(--green)}
+.btn-save:hover{background:rgba(57,255,20,.16)}
+.arow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 
-    .pattern-stat .p-sep {
-      color: var(--text-dim);
-    }
+/* ── Progress ─────────────────────────────────── */
+.prog-outer{height:2px;background:var(--bg2);border-radius:1px;overflow:hidden;margin:8px 0 4px}
+.prog-inner{height:100%;width:0%;border-radius:1px;background:linear-gradient(90deg,var(--cyan),var(--purple));transition:width .3s;box-shadow:0 0 6px rgba(0,212,255,.5)}
+.prog-lbl{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim)}
 
-    .toast {
-      position: fixed;
-      bottom: 28px;
-      right: 28px;
-      background: var(--panel);
-      border: 1px solid var(--accent3);
-      color: var(--accent3);
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 12px;
-      padding: 10px 18px;
-      border-radius: 4px;
-      box-shadow: 0 0 20px rgba(57, 255, 20, 0.2);
-      z-index: 1000;
-      opacity: 0;
-      transform: translateY(10px);
-      transition: opacity 0.2s, transform 0.2s;
-      pointer-events: none;
-    }
+/* ── RIGHT: stats row ─────────────────────────── */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin-bottom:14px;flex-shrink:0}
+.sc{background:var(--bg2);border:1px solid var(--border2);border-radius:5px;padding:8px 10px;text-align:center}
+.sc.hit{border-color:rgba(57,255,20,.4);background:rgba(57,255,20,.04);box-shadow:0 0 10px rgba(57,255,20,.08)}
+.sc.wrn{border-color:rgba(255,59,92,.35);background:rgba(255,59,92,.04)}
+.sv{font-family:'Orbitron',monospace;font-size:18px;font-weight:700;color:var(--cyan)}
+.sc.hit .sv{color:var(--green)}
+.sc.wrn .sv{color:var(--red)}
+.sl{font-size:9px;letter-spacing:1.5px;color:var(--dim);text-transform:uppercase;margin-top:2px}
 
-    .toast.show {
-      opacity: 1;
-      transform: translateY(0);
-    }
+/* ── Tabs ─────────────────────────────────────── */
+.tabs{display:flex;border-bottom:1px solid var(--border);gap:0;overflow-x:auto;flex-shrink:0}
+.tab{
+  font-family:'Orbitron',monospace;font-size:8.5px;letter-spacing:2px;
+  text-transform:uppercase;padding:8px 12px;cursor:pointer;
+  color:var(--dim);border-bottom:2px solid transparent;
+  white-space:nowrap;transition:.12s;user-select:none;
+}
+.tab:hover{color:var(--text)}
+.tab.on{color:var(--cyan);border-bottom-color:var(--cyan)}
+.tab.on.g{color:var(--green);border-bottom-color:var(--green)}
+.tab.on.r{color:var(--red);border-bottom-color:var(--red)}
+.tct{
+  display:inline-block;background:rgba(0,212,255,.1);color:var(--cyan);
+  font-size:8px;padding:0 4px;border-radius:7px;margin-left:2px;
+}
+.tab.on.g .tct{background:rgba(57,255,20,.1);color:var(--green)}
+.tab.on.r .tct{background:rgba(255,59,92,.1);color:var(--red)}
+.pane{display:none;height:100%;overflow-y:auto;padding-top:12px}
+.pane.on{display:block}
 
-    .hidden {
-      display: none !important;
-    }
-  </style>
+/* ── Pane header ──────────────────────────────── */
+.ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px;flex-shrink:0}
+.pt{font-family:'Orbitron',monospace;font-size:10px;letter-spacing:2px;color:var(--green)}
+.pt.c{color:var(--cyan)}
+.pt.r{color:var(--red)}
+.pacts{display:flex;gap:5px;flex-wrap:wrap}
+
+/* ── Regex hit rows ───────────────────────────── */
+.hrow{
+  background:var(--bg2);border:1px solid rgba(57,255,20,.15);
+  border-radius:5px;padding:11px 13px;margin-bottom:8px;transition:.15s;
+}
+.hrow:hover{border-color:rgba(57,255,20,.4)}
+.hurl{
+  font-family:'Share Tech Mono',monospace;font-size:11px;
+  color:var(--cyan);word-break:break-all;margin-bottom:4px;
+  display:flex;align-items:flex-start;gap:6px;
+}
+.hurl a{color:var(--cyan);text-decoration:none}
+.hurl a:hover{text-decoration:underline;color:#80eeff}
+.htitle{font-size:11px;color:var(--text);margin-bottom:6px;opacity:0.9}
+.hpats{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
+.hptag{
+  font-family:'Share Tech Mono',monospace;font-size:9px;
+  background:rgba(198,120,221,.08);border:1px solid rgba(198,120,221,.28);
+  color:var(--purple);padding:1px 6px;border-radius:3px;
+}
+.hmatch{
+  font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--green);
+  background:rgba(57,255,20,.04);border-left:2px solid rgba(57,255,20,.35);
+  padding:3px 8px;margin:2px 0;border-radius:0 3px 3px 0;word-break:break-all;
+}
+.hctx{font-size:11px;color:var(--text);margin-top:2px;padding-left:10px;opacity:0.85;word-break:break-all}
+.hct{
+  font-family:'Share Tech Mono',monospace;font-size:8px;
+  background:rgba(57,255,20,.07);border:1px solid rgba(57,255,20,.2);
+  color:var(--green);padding:0 4px;border-radius:7px;flex-shrink:0;
+}
+
+/* ── Pattern summary bar ──────────────────────── */
+.psumbar{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px}
+.psum{
+  display:flex;align-items:center;gap:4px;
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:4px;padding:4px 8px;
+  font-family:'Share Tech Mono',monospace;font-size:10px;
+}
+.pn{color:var(--purple)} .pc{color:var(--green);font-weight:700}
+
+/* ── Data list ────────────────────────────────── */
+.dlist{font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text);line-height:1.9;overflow-y:auto}
+.di{display:flex;align-items:flex-start;gap:6px;padding:2px 0;border-bottom:1px solid rgba(26,58,92,.25)}
+.di-ic{color:var(--dim);flex-shrink:0}
+.di-tx{word-break:break-all;flex:1}
+.di-tx a{color:var(--cyan);text-decoration:none}
+.di-tx a:hover{text-decoration:underline}
+.di-bd{font-size:8px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.16);color:var(--cyan);padding:0 4px;border-radius:3px;flex-shrink:0}
+
+/* ── Form cards ───────────────────────────────── */
+.fcard{background:var(--bg2);border:1px solid var(--border2);border-radius:5px;padding:10px 13px;margin-bottom:7px}
+.fcard.bad{border-color:rgba(255,59,92,.28)}
+.ftop{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:5px}
+.fmeth{font-family:'Share Tech Mono',monospace;font-size:10px;background:rgba(0,212,255,.07);border:1px solid rgba(0,212,255,.18);color:var(--cyan);padding:1px 6px;border-radius:3px}
+.faction{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text);word-break:break-all;flex:1}
+.fflags{display:flex;gap:4px;flex-wrap:wrap}
+.ff{font-family:'Share Tech Mono',monospace;font-size:9px;padding:1px 5px;border-radius:3px;border:1px solid}
+.ff-p{color:var(--red);border-color:rgba(255,59,92,.35);background:rgba(255,59,92,.07)}
+.ff-f{color:var(--yellow);border-color:rgba(255,179,71,.35);background:rgba(255,179,71,.07)}
+.ff-nc{color:var(--red);border-color:rgba(255,59,92,.35);background:rgba(255,59,92,.07)}
+.ff-ok{color:var(--green);border-color:rgba(57,255,20,.28);background:rgba(57,255,20,.05)}
+.ffield{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim);margin-top:3px}
+.fhid{color:var(--yellow);margin-top:2px}
+
+/* ── Tech grid ────────────────────────────────── */
+.tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:7px;margin-bottom:10px}
+.tc{background:var(--bg2);border:1px solid var(--border2);border-radius:4px;padding:8px 10px}
+.tclbl{font-size:8px;letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin-bottom:2px}
+.tcval{font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--green);word-break:break-all}
+.tcval.e{color:var(--dim);opacity:0.7}
+
+/* ── Log ──────────────────────────────────────── */
+.logbox{
+  background:#020509;border:1px solid var(--border2);border-radius:4px;
+  padding:8px 10px;font-family:'Share Tech Mono',monospace;
+  font-size:10px;max-height:450px;overflow-y:auto;line-height:1.8;
+}
+.le{color:var(--dim)}
+.le.i{color:var(--cyan)} .le.w{color:var(--yellow)}
+.le.e{color:var(--red)} .le.h{color:var(--green);font-weight:bold} .le.ok{color:var(--green)}
+
+/* ── Empty state ──────────────────────────────── */
+.empty{text-align:center;padding:36px 16px;color:var(--dim)}
+.empty .big{font-size:28px;margin-bottom:8px}
+.empty p{font-size:11px;line-height:1.9}
+
+/* ── Toast ────────────────────────────────────── */
+.toast{
+  position:fixed;bottom:20px;right:20px;
+  background:var(--panel);border:1px solid var(--green);color:var(--green);
+  font-family:'Share Tech Mono',monospace;font-size:11px;
+  padding:8px 14px;border-radius:4px;box-shadow:0 0 16px rgba(57,255,20,.16);
+  z-index:999;opacity:0;transform:translateY(6px);
+  transition:opacity .18s,transform .18s;pointer-events:none;
+}
+.toast.on{opacity:1;transform:translateY(0)}
+
+/* ── Spinner ──────────────────────────────────── */
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{width:12px;height:12px;border:2px solid rgba(0,212,255,.18);border-top-color:var(--cyan);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+
+.hidden{display:none!important}
+</style>
 </head>
-
 <body>
+<div class="wrap">
 
-  <div class="split-layout">
-    <!-- LEFT SIDE: All Inputs & Controls -->
-    <div class="left-panel">
-      <div class="header">
-        <div class="logo-icon">
-          <svg viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="26" cy="26" r="24" stroke="#00d4ff" stroke-width="1.5" stroke-dasharray="4 2" opacity="0.4" />
-            <circle cx="26" cy="26" r="16" stroke="#00d4ff" stroke-width="1" opacity="0.6" />
-            <circle cx="26" cy="26" r="5" fill="#00d4ff" opacity="0.9" />
-            <line x1="26" y1="2" x2="26" y2="10" stroke="#00d4ff" stroke-width="1.5" opacity="0.8" />
-            <line x1="26" y1="42" x2="26" y2="50" stroke="#00d4ff" stroke-width="1.5" opacity="0.8" />
-            <line x1="2" y1="26" x2="10" y2="26" stroke="#00d4ff" stroke-width="1.5" opacity="0.8" />
-            <line x1="42" y1="26" x2="50" y2="26" stroke="#00d4ff" stroke-width="1.5" opacity="0.8" />
-            <circle cx="26" cy="26" r="9" stroke="#c678dd" stroke-width="1" stroke-dasharray="3 3" opacity="0.7" />
-          </svg>
-        </div>
-        <div class="header-text">
-          <h1>CREEPER</h1>
-          <p>Async OSINT Web Scraper · Regex URL Hunter</p>
-        </div>
-        <div class="version-badge">v2.0 · REGEX ENGINE</div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-title"><span class="dot"></span>Target Configuration</div>
-        <div class="field-group">
-          <label>Target URL</label>
-          <input type="text" id="targetUrl"
-            placeholder="https://example.com  or  https://linkedin.com/search/results/people/?keywords=cybersecurity" />
-        </div>
-        <div class="grid-4">
-          <div class="field-group"><label>Max Depth</label><input type="number" id="maxDepth" value="2" min="1"
-              max="10" /></div>
-          <div class="field-group"><label>Max Pages</label><input type="number" id="maxPages" value="50" min="1"
-              max="5000" /></div>
-          <div class="field-group"><label>Concurrency</label><input type="number" id="concurrency" value="5" min="1"
-              max="50" /></div>
-          <div class="field-group"><label>Timeout (s)</label><input type="number" id="timeout" value="15" min="5"
-              max="120" /></div>
-        </div>
-        <div class="grid-2">
-          <div class="field-group"><label>Delay Min (s)</label><input type="number" id="delayMin" value="0.5" min="0"
-              max="30" step="0.1" /></div>
-          <div class="field-group"><label>Delay Max (s)</label><input type="number" id="delayMax" value="2.0" min="0"
-              max="30" step="0.1" /></div>
-        </div>
-        <div class="field-group">
-          <label>Options</label>
-          <div class="toggle-row">
-            <label class="toggle-item"><input type="checkbox" id="optJs"><span class="toggle-box"></span><span
-                class="toggle-label">JS Render (Playwright)</span></label>
-            <label class="toggle-item"><input type="checkbox" id="optRobots" checked><span
-                class="toggle-box"></span><span class="toggle-label">Respect robots.txt</span></label>
-            <label class="toggle-item"><input type="checkbox" id="optSsl" checked><span class="toggle-box"></span><span
-                class="toggle-label">Verify SSL</span></label>
-            <label class="toggle-item"><input type="checkbox" id="optMatchOnly"><span class="toggle-box"></span><span
-                class="toggle-label" data-tip="Only keep pages that matched a regex">Regex Match-Only
-                Mode</span></label>
-          </div>
-        </div>
-        <div class="field-group">
-          <label>Export Formats</label>
-          <div class="toggle-row">
-            <label class="toggle-item"><input type="checkbox" id="expJson" checked><span class="toggle-box"></span><span
-                class="toggle-label">JSON</span></label>
-            <label class="toggle-item"><input type="checkbox" id="expCsv"><span class="toggle-box"></span><span
-                class="toggle-label">CSV</span></label>
-            <label class="toggle-item"><input type="checkbox" id="expSqlite"><span class="toggle-box"></span><span
-                class="toggle-label">SQLite</span></label>
-          </div>
-        </div>
-      </div>
-
-      <div class="panel regex-panel">
-        <div class="panel-title"><span class="dot"></span>Regex Pattern Engine — URL Targeting</div>
-        <div class="field-group">
-          <label>Patterns <span style="color:var(--text-dim);font-size:10px">(type pattern + Enter or comma to
-              add)</span></label>
-          <div class="regex-tags-area" id="regexTagsArea" onclick="document.getElementById('regexTagInput').focus()">
-            <input type="text" id="regexTagInput" class="regex-input"
-              placeholder="e.g. pentester  or  CTF player  or  api_key\s*=  …" />
-          </div>
-          <div class="regex-hint">Pages where ANY pattern matches → URL collected and highlighted. Supports full regex
-            syntax (Python <code style="color:var(--accent4)">re</code> module).</div>
-        </div>
-        <div class="section-title">Quick Presets</div>
-        <div class="preset-row" id="presetRow">
-          <div class="preset-group-label">Cybersecurity People</div>
-          <button class="preset-btn"
-            onclick="addPreset(['pentester','CTF player','bug bounty','red team','blue team','SOC analyst','OSCP','CEH','CISSP','ethical hacker','cyber security','malware analyst','threat hunter','incident response'])">
-            Cyber Roles</button>
-          <button class="preset-btn"
-            onclick="addPreset(['exploit developer','reverse engineer','fuzzing','CVE researcher','zero-day','vulnerability researcher','binary exploitation'])">
-            Exploit/Vuln Researchers</button>
-          <button class="preset-btn"
-            onclick="addPreset(['CISO','chief information security','VP security','head of security','director of security'])">
-            Security Leadership</button>
-          <div class="preset-group-label">Dev / Engineering</div>
-          <button class="preset-btn"
-            onclick="addPreset(['software engineer','backend developer','frontend developer','full stack','DevOps','SRE','data engineer','machine learning engineer'])">
-            Dev Roles</button>
-          <button class="preset-btn"
-            onclick="addPreset(['Python','JavaScript','Rust','Golang','TypeScript','Kubernetes','AWS','GCP','Azure'])">
-            Tech Stack</button>
-          <div class="preset-group-label">Sensitive Data Patterns</div>
-          <button class="preset-btn"
-            onclick="addPreset(['api_key\\s*=','secret\\s*=','password\\s*=','token\\s*=','access_token','AWS_ACCESS_KEY'])">
-            API Keys / Secrets</button>
-          <button class="preset-btn" onclick="addPreset(['[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}'])">
-            Emails</button>
-          <button class="preset-btn"
-            onclick="addPreset(['(?:\\+?1[\\s.-]?)?(?:\\(?\\d{3}\\)?[\\s.-]?)?\\d{3}[\\s.-]?\\d{4}'])">Phone
-            Numbers</button>
-          <button class="preset-btn"
-            onclick="addPreset(['/admin','/login','/dashboard','/wp-admin','/api/v1','/graphql'])">Admin/Login
-            Paths</button>
-          <div class="preset-group-label">Social / Profile</div>
-          <button class="preset-btn"
-            onclick="addPreset(['github\\.com/\\w+','twitter\\.com/\\w+','linkedin\\.com/in/\\w+'])">Social
-            Profiles</button>
-          <button class="preset-btn" onclick="clearAllPatterns()">✕ Clear All</button>
-        </div>
-      </div>
-
-      <div class="panel" id="cliPreviewPanel">
-        <div class="panel-title"><span class="dot"></span>Generated CLI Command</div>
-        <div class="log-box" id="cliPreview" style="color:var(--accent3);font-size:12px;max-height:80px;"></div>
-      </div>
-
-      <div class="action-row" style="margin-bottom:24px">
-        <button class="btn btn-primary" id="startBtn" onclick="startScan()"><span>▶</span> Start Crawl</button>
-        <button class="btn btn-danger btn-sm hidden" id="stopBtn" onclick="stopScan()">■ Stop</button>
-        <span id="statusLabel"
-          style="font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--text-dim);margin-left:8px;"></span>
-      </div>
-      <div id="progressArea" style="margin-bottom:16px;">
-        <div class="progress-bar-outer">
-          <div class="progress-bar-inner" id="progressBar"></div>
-        </div>
-        <div class="progress-label" id="progressLabel">Initializing…</div>
-      </div>
+<!-- ════════ LEFT ════════ -->
+<div class="left">
+  <div class="hdr">
+    <svg viewBox="0 0 42 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="21" cy="21" r="19" stroke="#00d4ff" stroke-width="1" stroke-dasharray="4 2" opacity=".4"/>
+      <circle cx="21" cy="21" r="12" stroke="#00d4ff" stroke-width=".8" opacity=".55"/>
+      <circle cx="21" cy="21" r="4" fill="#00d4ff" opacity=".9"/>
+      <line x1="21" y1="2"  x2="21" y2="8"  stroke="#00d4ff" stroke-width="1.4" opacity=".8"/>
+      <line x1="21" y1="34" x2="21" y2="40" stroke="#00d4ff" stroke-width="1.4" opacity=".8"/>
+      <line x1="2"  y1="21" x2="8"  y2="21" stroke="#00d4ff" stroke-width="1.4" opacity=".8"/>
+      <line x1="34" y1="21" x2="40" y2="21" stroke="#00d4ff" stroke-width="1.4" opacity=".8"/>
+      <circle cx="21" cy="21" r="7" stroke="#c678dd" stroke-width=".6" stroke-dasharray="2 2" opacity=".6"/>
+    </svg>
+    <div>
+      <h1>CREEPER</h1>
+      <p>Bug Hunt Recon · Stealth Crawler</p>
     </div>
-
-    <!-- RIGHT SIDE: All Outputs (Split View) -->
-    <div class="right-panel">
-      <div id="resultsSection">
-        <div class="stats-row" id="statsRow"></div>
-        <div class="tabs" id="tabBar">
-          <div class="tab has-hits active" data-tab="regex" id="tabRegex">Regex Hits <span class="tab-count"
-              id="tcRegex">0</span></div>
-          <div class="tab" data-tab="pages" id="tabPages">Pages <span class="tab-count" id="tcPages">0</span></div>
-          <div class="tab" data-tab="emails" id="tabEmails">Emails <span class="tab-count" id="tcEmails">0</span></div>
-          <div class="tab" data-tab="phones" id="tabPhones">Phones <span class="tab-count" id="tcPhones">0</span></div>
-          <div class="tab" data-tab="subdomains" id="tabSubdomains">Subdomains <span class="tab-count"
-              id="tcSubdomains">0</span></div>
-          <div class="tab" data-tab="apis" id="tabApis">API Endpoints <span class="tab-count" id="tcApis">0</span></div>
-          <div class="tab" data-tab="tech" id="tabTech">Tech Fingerprint</div>
-          <div class="tab" data-tab="log" id="tabLog">Log</div>
-        </div>
-
-        <div class="tab-pane active" id="paneRegex">
-          <div class="hits-header">
-            <div class="hits-title">Matched URLs</div>
-            <div class="hits-actions"><button class="btn btn-copy btn-sm" onclick="copyMatchedUrls()">Copy
-                URLs</button><button class="btn btn-save btn-sm" onclick="saveMatchedUrls()">Save URLs
-                (.txt)</button><button class="btn btn-save btn-sm" onclick="saveFullReport()">Save Report
-                (.json)</button></div>
-          </div>
-          <div id="patternSummary" class="pattern-summary"></div>
-          <div id="regexHitsContainer"></div>
-        </div>
-
-        <div class="tab-pane" id="panePages">
-          <div class="hits-header">
-            <div class="hits-title">Crawled Pages</div>
-            <div class="hits-actions"><button class="btn btn-save btn-sm" onclick="savePagesAsCsv()">Save Pages
-                (.csv)</button></div>
-          </div>
-          <div class="data-list" id="pagesList"></div>
-        </div>
-
-        <div class="tab-pane" id="paneEmails">
-          <div class="hits-header">
-            <div class="hits-title">Emails Found</div>
-            <div class="hits-actions"><button class="btn btn-copy btn-sm" onclick="copyList('emails')">Copy
-                All</button><button class="btn btn-save btn-sm" onclick="saveList('emails', 'emails.txt')">Save
-                (.txt)</button></div>
-          </div>
-          <div class="data-list" id="emailsList"></div>
-        </div>
-
-        <div class="tab-pane" id="panePhones">
-          <div class="hits-header">
-            <div class="hits-title">Phone Numbers Found</div>
-            <div class="hits-actions"><button class="btn btn-save btn-sm" onclick="saveList('phones', 'phones.txt')">
-                Save (.txt)</button></div>
-          </div>
-          <div class="data-list" id="phonesList"></div>
-        </div>
-
-        <div class="tab-pane" id="paneSubdomains">
-          <div class="hits-header">
-            <div class="hits-title">Subdomains Discovered</div>
-            <div class="hits-actions"><button class="btn btn-save btn-sm"
-                onclick="saveList('subdomains', 'subdomains.txt')">Save (.txt)</button></div>
-          </div>
-          <div class="data-list" id="subdomainsList"></div>
-        </div>
-
-        <div class="tab-pane" id="paneApis">
-          <div class="hits-header">
-            <div class="hits-title">API Endpoints Detected</div>
-            <div class="hits-actions"><button class="btn btn-save btn-sm"
-                onclick="saveList('api_endpoints', 'api_endpoints.txt')">Save (.txt)</button></div>
-          </div>
-          <div class="data-list" id="apisList"></div>
-        </div>
-
-        <div class="tab-pane" id="paneTech">
-          <div id="techContent"></div>
-        </div>
-        <div class="tab-pane" id="paneLog">
-          <div class="log-box" id="logBox" style="max-height:500px;"></div>
-        </div>
-      </div>
-    </div>
+    <div class="ver">v3 · MOD</div>
   </div>
 
-  <div class="toast" id="toast"></div>
+  <div class="left-scroll">
 
-  <script>
-    // FULL ORIGINAL JAVASCRIPT - COMPLETELY UNMODIFIED EXCEPT FOR DEMO MODE REFS
-    const state = { patterns: [], scanning: false, report: null, aborted: false };
-    const tagsArea = document.getElementById('regexTagsArea');
-    const tagInput = document.getElementById('regexTagInput');
+    <!-- Target -->
+    <div class="card">
+      <div class="card-title"><span class="cdot"></span>Target</div>
+      <div class="field"><label>URL</label><input type="text" id="iUrl" placeholder="https://target.com"/></div>
+      <div class="g4">
+        <div class="field"><label>Depth</label><input type="number" id="iDepth" value="2" min="1" max="10"/></div>
+        <div class="field"><label>Pages</label><input type="number" id="iPages" value="50" min="1" max="5000"/></div>
+        <div class="field"><label>Workers</label><input type="number" id="iConc" value="5" min="1" max="20"/></div>
+        <div class="field"><label>Timeout</label><input type="number" id="iTimeout" value="20" min="5" max="120"/></div>
+      </div>
+      <div class="g2">
+        <div class="field"><label>Delay Min (s)</label><input type="number" id="iDMin" value="1.0" min="0" step="0.1"/></div>
+        <div class="field"><label>Delay Max (s)</label><input type="number" id="iDMax" value="3.0" min="0" step="0.1"/></div>
+      </div>
+      <div class="field"><label>Options</label>
+        <div class="trow">
+          <label class="tog"><input type="checkbox" id="oJs"><span class="tbox"></span><span class="tog-lbl">JS Render</span></label>
+          <label class="tog"><input type="checkbox" id="oRobots" checked><span class="tbox"></span><span class="tog-lbl">robots.txt</span></label>
+          <label class="tog"><input type="checkbox" id="oSsl" checked><span class="tbox"></span><span class="tog-lbl">Verify SSL</span></label>
+          <label class="tog"><input type="checkbox" id="oMo"><span class="tbox"></span><span class="tog-lbl">Match-Only</span></label>
+          <label class="tog"><input type="checkbox" id="oNinja"><span class="tbox" style="border-color:var(--orange)"></span><span class="tog-lbl" style="color:var(--orange)">Ninja Mode</span></label>
+        </div>
+      </div>
+      <div class="field"><label>Proxies <span style="color:var(--dim);font-size:8px">(One per line)</span></label>
+        <textarea id="iProxies" placeholder="http://user:pass@1.2.3.4:8080..." style="min-height:40px"></textarea>
+      </div>
+      <div class="field"><label>Export</label>
+        <div class="trow">
+          <label class="tog"><input type="checkbox" id="eJson" checked><span class="tbox"></span><span class="tog-lbl">JSON</span></label>
+          <label class="tog"><input type="checkbox" id="eCsv"><span class="tbox"></span><span class="tog-lbl">CSV</span></label>
+          <label class="tog"><input type="checkbox" id="eSql"><span class="tbox"></span><span class="tog-lbl">SQLite</span></label>
+        </div>
+      </div>
+    </div>
 
-    function isValidRegex(p) { try { new RegExp(p); return true; } catch { return false; } }
+    <!-- Auth headers -->
+    <div class="card green">
+      <div class="card-title"><span class="cdot"></span>Auth Headers <span style="color:var(--dim);font-size:8px;margin-left:4px;letter-spacing:1px">COOKIE · TOKEN · API KEY</span></div>
+      <div class="kvlist" id="kvList"></div>
+      <button class="kv-add" onclick="addKv()">+ Add Header</button>
+    </div>
 
-    function renderTags() {
-      tagsArea.querySelectorAll('.regex-tag').forEach(t => t.remove());
-      state.patterns.forEach((p, i) => {
-        const valid = isValidRegex(p);
-        const tag = document.createElement('span');
-        tag.className = 'regex-tag' + (valid ? '' : ' invalid');
-        tag.innerHTML = `<span>${escHtml(p)}</span><span class="regex-tag-remove" onclick="removePattern(${i})">×</span>`;
-        tagsArea.insertBefore(tag, tagInput);
-      });
-      updateCliPreview();
+    <!-- Regex engine -->
+    <div class="card purple">
+      <div class="card-title"><span class="cdot"></span>Regex Pattern Engine</div>
+      <div class="field">
+        <label>Patterns <span style="color:var(--dim);font-size:8px">(Enter or comma to add)</span></label>
+        <div class="regex-area" id="rxa" onclick="document.getElementById('ri').focus()">
+          <input type="text" id="ri" class="ri" placeholder="api_key\s*=  or  /admin  or  JWT …"/>
+        </div>
+        <div class="hint">Pages matching ANY pattern → collected. Full Python <code style="color:var(--purple)">re</code> syntax.</div>
+      </div>
+
+      <div class="psep">Secrets &amp; Keys</div>
+      <div class="prow">
+        <button class="pb" onclick="ap(['api_key\\s*=','secret\\s*=','password\\s*=','token\\s*=','access_token\\s*=','AKIA[0-9A-Z]{16}'])">API Keys</button>
+        <button class="pb" onclick="ap(['eyJ[a-zA-Z0-9\\-_]+\\.[a-zA-Z0-9\\-_]+'])">JWT</button>
+        <button class="pb" onclick="ap(['ghp_[0-9A-Za-z]{36}','AIza[0-9A-Za-z\\-_]{35}','sk-[a-zA-Z0-9]{20,}'])">Cloud Keys</button>
+        <button class="pb" onclick="ap(['BEGIN (RSA|EC|OPENSSH) PRIVATE KEY'])">Private Keys</button>
+      </div>
+
+      <div class="psep">Attack Surface</div>
+      <div class="prow">
+        <button class="pb" onclick="ap(['/admin','/login','/dashboard','/wp-admin','/wp-login\\.php','/phpmyadmin','/cpanel'])">Admin Paths</button>
+        <button class="pb" onclick="ap(['/api/v\\d','/graphql','/rest/','/rpc','/webhook','/internal'])">API Routes</button>
+        <button class="pb" onclick="ap(['enctype=[&quot;\\\']multipart','type=[&quot;\\\']file'])">File Uploads</button>
+        <button class="pb" onclick="ap(['debug=true','debug=1','FLASK_DEBUG','NODE_ENV=development','APP_ENV=local'])">Debug Flags</button>
+      </div>
+
+      <div class="psep">Leaks &amp; Errors</div>
+      <div class="prow">
+        <button class="pb" onclick="ap(['sourceMappingURL','\\.map&quot;'])">Source Maps</button>
+        <button class="pb" onclick="ap(['SELECT .* FROM','UNION SELECT','ORA-\\d{5}','Warning: mysql'])">SQL Errors</button>
+        <button class="pb" onclick="ap(['Exception','stack trace','Traceback','Fatal error'])">Stack Traces</button>
+        <button class="pb" onclick="ap(['\\.env','config\\.php','web\\.config','database\\.yml','\\.htaccess'])">Config Files</button>
+        <button class="pb" onclick="ap(['csrfmiddlewaretoken','authenticity_token','__VIEWSTATE'])">CSRF Tokens</button>
+      </div>
+
+      <div class="prow" style="margin-top:6px">
+        <button class="pb clr" onclick="clrPats()">✕ Clear All</button>
+      </div>
+    </div>
+
+    <!-- CLI preview -->
+    <div class="card">
+      <div class="card-title"><span class="cdot"></span>CLI Command</div>
+      <div class="cli" id="cliPrev"></div>
+    </div>
+
+  </div><!-- /left-scroll -->
+
+  <!-- Actions (Pinned to bottom) -->
+  <div class="left-footer">
+    <div class="arow" style="margin-bottom:8px">
+      <button class="btn btn-start" id="startBtn" onclick="startScan()"><span>▶</span> Start Crawl</button>
+      <button class="btn btn-stop btn-sm hidden" id="stopBtn" onclick="stopScan()">■ Stop</button>
+      <span id="statusLbl" style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim)"></span>
+    </div>
+    <div class="prog-outer"><div class="prog-inner" id="progBar"></div></div>
+    <div class="prog-lbl" id="progLbl">Ready</div>
+  </div>
+
+</div><!-- /left -->
+
+<!-- ════════ RIGHT ════════ -->
+<div class="right">
+  <div class="stats" id="statsRow"></div>
+
+  <div class="tabs" id="tabBar">
+    <div class="tab on g" data-t="regex"   id="tabRegex">Regex Hits <span class="tct" id="tcR">0</span></div>
+    <div class="tab r"    data-t="forms"   id="tabForms">Forms <span class="tct" id="tcF">0</span></div>
+    <div class="tab"      data-t="secrets" id="tabSecrets">JS Secrets <span class="tct" id="tcS">0</span></div>
+    <div class="tab"      data-t="apis"    id="tabApis">API Routes <span class="tct" id="tcA">0</span></div>
+    <div class="tab"      data-t="emails"  id="tabEmails">Emails <span class="tct" id="tcE">0</span></div>
+    <div class="tab"      data-t="phones"  id="tabPhones">Phones <span class="tct" id="tcPh">0</span></div>
+    <div class="tab"      data-t="subs"    id="tabSubs">Subdomains <span class="tct" id="tcSb">0</span></div>
+    <div class="tab"      data-t="pages"   id="tabPages">Pages <span class="tct" id="tcPg">0</span></div>
+    <div class="tab"      data-t="tech"    id="tabTech">Tech</div>
+    <div class="tab"      data-t="log"     id="tabLog">Log</div>
+  </div>
+
+  <div style="flex:1;overflow:hidden;position:relative">
+
+    <div class="pane on" id="pRegex">
+      <div class="ph">
+        <div class="pt">Matched URLs</div>
+        <div class="pacts">
+          <button class="btn btn-copy btn-sm" onclick="copyHitUrls()">Copy URLs</button>
+          <button class="btn btn-save btn-sm" onclick="saveHitUrls()">Save .txt</button>
+          <button class="btn btn-save btn-sm" onclick="saveReport()">Full JSON</button>
+        </div>
+      </div>
+      <div class="psumbar" id="patSum"></div>
+      <div id="regexCont"></div>
+    </div>
+
+    <div class="pane" id="pForms">
+      <div class="ph">
+        <div class="pt r">Forms — Attack Surface</div>
+        <div class="pacts">
+          <button class="btn btn-save btn-sm" onclick="saveFormsCsv()">Save CSV</button>
+        </div>
+      </div>
+      <div id="formsCont"></div>
+    </div>
+
+    <div class="pane" id="pSecrets">
+      <div class="ph">
+        <div class="pt r">Sensitive JS Vars &amp; Secrets</div>
+        <div class="pacts">
+          <button class="btn btn-copy btn-sm" onclick="copyKey('js_sensitive_vars')">Copy</button>
+          <button class="btn btn-save btn-sm" onclick="saveKey('js_sensitive_vars','js_secrets.txt')">Save</button>
+        </div>
+      </div>
+      <div class="dlist" id="secretsCont"></div>
+    </div>
+
+    <div class="pane" id="pApis">
+      <div class="ph">
+        <div class="pt c">API / Internal Endpoints</div>
+        <div class="pacts">
+          <button class="btn btn-copy btn-sm" onclick="copyKey('api_endpoints')">Copy</button>
+          <button class="btn btn-save btn-sm" onclick="saveKey('api_endpoints','api_endpoints.txt')">Save</button>
+        </div>
+      </div>
+      <div class="dlist" id="apisCont"></div>
+    </div>
+
+    <div class="pane" id="pEmails">
+      <div class="ph">
+        <div class="pt c">Emails Found</div>
+        <div class="pacts">
+          <button class="btn btn-copy btn-sm" onclick="copyKey('emails')">Copy</button>
+          <button class="btn btn-save btn-sm" onclick="saveKey('emails','emails.txt')">Save</button>
+        </div>
+      </div>
+      <div class="dlist" id="emailsCont"></div>
+    </div>
+
+    <div class="pane" id="pPhones">
+      <div class="ph"><div class="pt c">Phone Numbers</div></div>
+      <div class="dlist" id="phonesCont"></div>
+    </div>
+
+    <div class="pane" id="pSubs">
+      <div class="ph">
+        <div class="pt c">Subdomains Discovered</div>
+        <div class="pacts">
+          <button class="btn btn-copy btn-sm" onclick="copyKey('subdomains')">Copy</button>
+          <button class="btn btn-save btn-sm" onclick="saveKey('subdomains','subdomains.txt')">Save</button>
+        </div>
+      </div>
+      <div class="dlist" id="subsCont"></div>
+    </div>
+
+    <div class="pane" id="pPages">
+      <div class="ph">
+        <div class="pt c">Crawled Pages</div>
+        <div class="pacts">
+          <button class="btn btn-save btn-sm" onclick="savePagesCsv()">Save CSV</button>
+        </div>
+      </div>
+      <div class="dlist" id="pagesCont"></div>
+    </div>
+
+    <div class="pane" id="pTech">
+      <div class="ph"><div class="pt c">Technology Fingerprint</div></div>
+      <div id="techCont"></div>
+    </div>
+
+    <div class="pane" id="pLog">
+      <div class="ph">
+        <div class="pt c">Crawl Log</div>
+        <div class="pacts">
+          <button class="btn btn-copy btn-sm" onclick="document.getElementById('logBox').innerHTML=''">Clear</button>
+        </div>
+      </div>
+      <div class="logbox" id="logBox"></div>
+    </div>
+
+  </div>
+</div><!-- /right -->
+</div><!-- /wrap -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ── State ─────────────────────────────── */
+const S = { pats:[], kvs:[], scanning:false, aborted:false, report:null };
+
+/* ── Utils ─────────────────────────────── */
+const $ = id => document.getElementById(id);
+const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function validRx(p){try{new RegExp(p);return true}catch{return false}}
+let _tt=null;
+function toast(msg,err=false){
+  const t=$('toast');
+  t.textContent=msg;t.style.borderColor=err?'var(--red)':'var(--green)';
+  t.style.color=err?'var(--red)':'var(--green)';t.classList.add('on');
+  if(_tt)clearTimeout(_tt);_tt=setTimeout(()=>t.classList.remove('on'),2600);
+}
+function dl(text,name){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'text/plain'}));a.download=name;a.click();URL.revokeObjectURL(a.href)}
+
+/* ── Tabs ──────────────────────────────── */
+document.querySelectorAll('.tab').forEach(tab=>{
+  tab.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(t=>{t.classList.remove('on','g','r')});
+    document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
+    tab.classList.add('on');
+    const k=tab.dataset.t;
+    $('p'+k.charAt(0).toUpperCase()+k.slice(1))?.classList.add('on');
+  });
+});
+
+/* ── Regex tags ────────────────────────── */
+const rxa=$('rxa'), ri=$('ri');
+function renderTags(){
+  rxa.querySelectorAll('.rtag').forEach(t=>t.remove());
+  S.pats.forEach((p,i)=>{
+    const ok=validRx(p);
+    const t=document.createElement('span');
+    t.className='rtag'+(ok?'':' bad');
+    t.innerHTML=`<span>${esc(p)}</span><span class="rx" onclick="rmp(${i})">×</span>`;
+    rxa.insertBefore(t,ri);
+  });updateCli();
+}
+function ap(list){list.forEach(p=>{p=p.trim();if(p&&!S.pats.includes(p))S.pats.push(p)});renderTags();toast(`Added ${list.length} preset(s)`)}
+function rmp(i){S.pats.splice(i,1);renderTags()}
+function clrPats(){S.pats=[];renderTags()}
+ri.addEventListener('keydown',e=>{
+  if(['Enter',',','Tab'].includes(e.key)){e.preventDefault();const v=ri.value.trim().replace(/,$/,'');if(v){if(!S.pats.includes(v))S.pats.push(v);ri.value='';renderTags()}}
+  else if(e.key==='Backspace'&&!ri.value&&S.pats.length){rmp(S.pats.length-1)}
+});
+ri.addEventListener('paste',e=>{
+  e.preventDefault();
+  const t=(e.clipboardData||window.clipboardData).getData('text');
+  t.split(/[\n,]+/).map(p=>p.trim()).filter(Boolean).forEach(p=>{if(!S.pats.includes(p))S.pats.push(p)});
+  ri.value='';renderTags();
+});
+
+/* ── KV rows ───────────────────────────── */
+function addKv(k='',v=''){S.kvs.push({id:Date.now(),k,v});renderKvs()}
+function delKv(id){S.kvs=S.kvs.filter(r=>r.id!==id);renderKvs()}
+function renderKvs(){
+  $('kvList').innerHTML=S.kvs.map(r=>`
+    <div class="kvrow">
+      <input type="text" placeholder="Header / Cookie" value="${esc(r.k)}" oninput="updKv(${r.id},'k',this.value)"/>
+      <input type="text" placeholder="value / token" value="${esc(r.v)}" oninput="updKv(${r.id},'v',this.value)"/>
+      <button class="kvdel" onclick="delKv(${r.id})">×</button>
+    </div>`).join('');updateCli();
+}
+function updKv(id,f,v){const r=S.kvs.find(x=>x.id===id);if(r){r[f]=v;updateCli()}}
+function buildHeaders(){const h={};S.kvs.forEach(r=>{if(r.k.trim())h[r.k.trim()]=r.v});return h}
+
+/* ── CLI preview ───────────────────────── */
+function updateCli(){
+  const url=$('iUrl').value.trim()||'<URL>';
+  let cmd=`python scrape_cli.py "${url}"`
+    +` -d ${$('iDepth').value} -p ${$('iPages').value} -c ${$('iConc').value}`
+    +` --delay-min ${$('iDMin').value} --delay-max ${$('iDMax').value} --timeout ${$('iTimeout').value}`;
+  if($('oJs').checked)     cmd+=' --js';
+  if(!$('oRobots').checked)cmd+=' --no-robots';
+  if(!$('oSsl').checked)   cmd+=' --no-ssl-verify';
+  if($('oMo').checked)     cmd+=' --match-only';
+  if($('oNinja').checked)  cmd+=' --ninja';
+  const proxies = $('iProxies').value.split('\\n').map(p=>p.trim()).filter(Boolean);
+  if(proxies.length) cmd+=` --proxies ${proxies.length}`;
+  const fmts=[];
+  if($('eJson').checked)fmts.push('json');
+  if($('eCsv').checked) fmts.push('csv');
+  if($('eSql').checked) fmts.push('sqlite');
+  if(fmts.length)cmd+=' --export '+fmts.join(' ');
+  S.kvs.filter(r=>r.k.trim()).forEach(r=>{cmd+=` --header "${esc(r.k)}=${esc(r.v)}"`});
+  if(S.pats.length)cmd+=' --regex '+S.pats.map(p=>`"${p.replace(/"/g,'\\"')}"`).join(' ');
+  $('cliPrev').textContent=cmd;
+}
+document.querySelectorAll('input,select').forEach(el=>{el.addEventListener('change',updateCli);el.addEventListener('input',updateCli)});
+
+/* ── Scan ──────────────────────────────── */
+let _simInt=null;
+
+function startScan(){
+  const url=$('iUrl').value.trim();
+  if(!url){toast('Enter a target URL',true);return}
+  S.scanning=true;S.aborted=false;S.report=null;
+  $('startBtn').disabled=true;$('stopBtn').classList.remove('hidden');
+  ['regexCont','formsCont','secretsCont','apisCont','emailsCont','phonesCont',
+   'subsCont','pagesCont','techCont','statsRow','patSum'].forEach(id=>{const e=$(id);if(e)e.innerHTML=''});
+  $('logBox').innerHTML='';
+  setStatus('Connecting…');
+  log('i',`Target: ${url}`);
+  log('i',`depth:${$('iDepth').value} pages:${$('iPages').value} workers:${$('iConc').value}`);
+  if(S.pats.length)log('i',`Patterns (${S.pats.length}): ${S.pats.join(' | ')}`);
+  else log('w','No regex patterns — all pages will be collected');
+
+  const cfg={
+    url,max_depth:+$('iDepth').value,max_pages:+$('iPages').value,
+    concurrency:+$('iConc').value,delay_min:+$('iDMin').value,delay_max:+$('iDMax').value,
+    timeout:+$('iTimeout').value,use_js:$('oJs').checked,
+    respect_robots:$('oRobots').checked,verify_ssl:$('oSsl').checked,
+    match_only:$('oMo').checked,regex_patterns:[...S.pats],
+    ninja_mode:$('oNinja').checked, proxies:$('iProxies').value.split('\\n').map(p=>p.trim()).filter(Boolean),
+    export_formats:[...([$('eJson').checked&&'json',$('eCsv').checked&&'csv',$('eSql').checked&&'sqlite'].filter(Boolean))],
+    custom_headers:buildHeaders()
+  };
+  fetch('/api/scrape',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)})
+    .then(r=>{if(!r.ok)throw new Error('no backend');return r.json()})
+    .then(r=>finalise(r))
+    .catch(()=>runDemo(url,cfg));
+}
+
+function stopScan(){
+  S.aborted=true;
+  if(_simInt){clearInterval(_simInt);_simInt=null}
+  setStatus('⏹ Stopped');
+  $('startBtn').disabled=false;$('stopBtn').classList.add('hidden');
+  log('w','Stopped by user.');
+}
+
+/* ── Demo / simulation ─────────────────── */
+function runDemo(url,cfg){
+  log('w','[DEMO] No backend detected — showing simulated output.');
+  let domain='target.com';try{domain=new URL(url).hostname}catch{}
+  const maxPg=Math.min(cfg.max_pages,20);
+  const routes=['/','/about','/login','/admin','/dashboard','/api/v1/users',
+    '/api/v2/keys','/graphql','/internal','/config.php','/.env',
+    '/wp-admin','/phpmyadmin','/upload','/debug','/settings',
+    '/api/v1/tokens','/api/v2/admin'];
+  const report={
+    target:url,scraped_at:new Date().toISOString(),total_pages:maxPg,
+    avg_response_time_ms:0,waf_signals_detected:0,
+    regex_patterns_used:[...S.pats],regex_pattern_errors:[],
+    regex_matched_urls:[],regex_total_hits:0,regex_pattern_hit_count:{},
+    emails:[`admin@${domain}`,`security@${domain}`,`noreply@${domain}`],
+    phones:['15551234567','14089876543'],
+    forms:[
+      {action:`https://${domain}/login`,method:'POST',enctype:'',id:'loginForm',name:'login',
+       input_count:3,has_password:true,has_file_upload:false,has_hidden:true,has_csrf_token:false,
+       inputs:[{name:'username',type:'text'},{name:'password',type:'password'},{name:'_token',type:'hidden',value:'abc123'}]},
+      {action:`https://${domain}/upload`,method:'POST',enctype:'multipart/form-data',id:'upForm',name:'',
+       input_count:2,has_password:false,has_file_upload:true,has_hidden:false,has_csrf_token:true,
+       inputs:[{name:'file',type:'file'},{name:'csrf_token',type:'hidden',value:''}]},
+      {action:`https://${domain}/search`,method:'GET',enctype:'',id:'',name:'',
+       input_count:1,has_password:false,has_file_upload:false,has_hidden:false,has_csrf_token:false,
+       inputs:[{name:'q',type:'text'}]},
+    ],
+    forms_with_password:[],forms_with_upload:[],forms_without_csrf:[],
+    comments:['<!-- TODO: remove /debug before prod -->','<!-- API_KEY=demo-key-here -->'],
+    subdomains:[`api.${domain}`,`dev.${domain}`,`staging.${domain}`,`mail.${domain}`],
+    api_endpoints:['/api/v1/users','/api/v2/tokens','/graphql','/internal/health','/api/v1/keys'],
+    js_sensitive_vars:[`apiKey=sk-demokey1234567890`,`[SECRET] AKIA1234567890EXAMPLE`,`[SOURCEMAP] main.js.map`],
+    external_links:[],pages_by_status:{200:0},
+    tech:{server:'nginx/1.24.0',cms:'WordPress',waf:'Cloudflare',cdn:'Cloudflare',
+      powered_by:'PHP/8.1',frameworks:['WordPress','React'],
+      missing_security_headers:['content-security-policy','permissions-policy'],
+      security_headers:{'x-frame-options':'SAMEORIGIN','x-content-type-options':'nosniff'}},
+    pages:[],
+  };
+  report.forms_with_password=report.forms.filter(f=>f.has_password);
+  report.forms_with_upload=report.forms.filter(f=>f.has_file_upload);
+  report.forms_without_csrf=report.forms.filter(f=>!f.has_csrf_token);
+
+  let count=0,hits=0;
+  _simInt=setInterval(()=>{
+    if(S.aborted||count>=maxPg){
+      clearInterval(_simInt);_simInt=null;
+      if(!S.aborted){
+        report.total_pages=count;report.pages_by_status[200]=count;
+        report.avg_response_time_ms=Math.round(140+Math.random()*200);
+        report.regex_total_hits=hits;finalise(report);
+        $('startBtn').disabled=false;$('stopBtn').classList.add('hidden');
+        setStatus('✅ Demo complete');log('ok',`Done. ${count} pages, ${hits} regex hits.`);
+      }
+      return;
     }
-
-    function addPattern(raw) { const p = raw.trim(); if (!p || state.patterns.includes(p)) return; state.patterns.push(p); renderTags(); }
-    function removePattern(i) { state.patterns.splice(i, 1); renderTags(); }
-    function clearAllPatterns() { state.patterns = []; renderTags(); }
-    function addPreset(list) { list.forEach(addPattern); showToast(`Added ${list.length} preset pattern(s)`); }
-
-    tagInput.addEventListener('keydown', e => {
-      if (['Enter', ',', 'Tab'].includes(e.key)) { e.preventDefault(); const val = tagInput.value.trim().replace(/,$/, ''); if (val) { addPattern(val); tagInput.value = ''; } }
-      else if (e.key === 'Backspace' && tagInput.value === '' && state.patterns.length) { removePattern(state.patterns.length - 1); }
+    count++;
+    const path=routes[count%routes.length];
+    const purl=url.replace(/\/$/,'')+path;
+    const pct=Math.round((count/maxPg)*100);
+    $('progBar').style.width=pct+'%';$('progLbl').textContent=`[${pct}%] ${purl}`;
+    let mPats=[],mObjs=[];
+    S.pats.forEach(pat=>{
+      const isHit=/admin|api|key|secret|debug|config|upload|token|login|env/.test(path)||Math.random()<.13;
+      if(isHit){
+        mPats.push(pat);
+        report.regex_pattern_hit_count[pat]=(report.regex_pattern_hit_count[pat]||0)+1;
+        mObjs.push({pattern:pat,match_text:`[demo: ${pat.substring(0,40)}]`,match_count:1+Math.floor(Math.random()*3),context:`…${path} match…`});
+      }
     });
-    tagInput.addEventListener('paste', e => { e.preventDefault(); const text = (e.clipboardData || window.clipboardData).getData('text'); text.split(/[\n,]+/).map(p => p.trim()).filter(Boolean).forEach(addPattern); tagInput.value = ''; });
+    if(mPats.length){
+      hits++;
+      report.regex_matched_urls.push({url:purl,title:`Demo — ${path}`,matched_patterns:mPats,matches:mObjs});
+      log('h',`HIT [${mPats.join(', ')}] → ${purl}`);
+    }else{log('',` ${String(count).padStart(2)} ${purl}`)}
+    report.pages.push({url:purl,title:`Demo — ${path}`,status_code:200,response_time_ms:150+Math.random()*200,matched_patterns:mPats});
+  },230);
+}
 
-    function updateCliPreview() {
-      const url = document.getElementById('targetUrl').value.trim() || '<URL>';
-      const depth = document.getElementById('maxDepth').value, pages = document.getElementById('maxPages').value, conc = document.getElementById('concurrency').value;
-      const dMin = document.getElementById('delayMin').value, dMax = document.getElementById('delayMax').value, timeout = document.getElementById('timeout').value;
-      const js = document.getElementById('optJs').checked, noRobots = !document.getElementById('optRobots').checked, noSsl = !document.getElementById('optSsl').checked, matchOnly = document.getElementById('optMatchOnly').checked;
-      const exports = []; if (document.getElementById('expJson').checked) exports.push('json'); if (document.getElementById('expCsv').checked) exports.push('csv'); if (document.getElementById('expSqlite').checked) exports.push('sqlite');
-      let cmd = `python scrape_cli.py "${url}" -d ${depth} -p ${pages} -c ${conc} --delay-min ${dMin} --delay-max ${dMax} --timeout ${timeout}`;
-      if (js) cmd += ' --js'; if (noRobots) cmd += ' --no-robots'; if (noSsl) cmd += ' --no-ssl-verify'; if (matchOnly) cmd += ' --match-only';
-      if (exports.length) cmd += ` --export ${exports.join(' ')}`;
-      if (state.patterns.length) cmd += ' --regex ' + state.patterns.map(p => `"${p.replace(/"/g, '\\"')}"`).join(' ');
-      document.getElementById('cliPreview').textContent = cmd;
-    }
+/* ── Render results ────────────────────── */
+function finalise(rep){
+  S.report=rep;$('progBar').style.width='100%';
+  const defs=[
+    {l:'Pages',v:rep.total_pages,c:''},
+    {l:'Regex Hits',v:rep.regex_total_hits||0,c:'hit'},
+    {l:'Forms',v:(rep.forms||[]).length,c:''},
+    {l:'No-CSRF',v:(rep.forms_without_csrf||[]).length,c:'wrn'},
+    {l:'JS Secrets',v:(rep.js_sensitive_vars||[]).length,c:'wrn'},
+    {l:'APIs',v:(rep.api_endpoints||[]).length,c:''},
+    {l:'Emails',v:(rep.emails||[]).length,c:''},
+    {l:'Subdomains',v:(rep.subdomains||[]).length,c:''},
+  ];
+  $('statsRow').innerHTML=defs.map(d=>`<div class="sc ${d.c}"><div class="sv">${d.v}</div><div class="sl">${d.l}</div></div>`).join('');
+  $('tcR').textContent=rep.regex_total_hits||0;
+  $('tcF').textContent=(rep.forms||[]).length;
+  $('tcS').textContent=(rep.js_sensitive_vars||[]).length;
+  $('tcA').textContent=(rep.api_endpoints||[]).length;
+  $('tcE').textContent=(rep.emails||[]).length;
+  $('tcPh').textContent=(rep.phones||[]).length;
+  $('tcSb').textContent=(rep.subdomains||[]).length;
+  $('tcPg').textContent=rep.total_pages;
+  renderHits(rep);renderForms(rep);
+  dlist('secretsCont',(rep.js_sensitive_vars||[]).map(v=>({ic:'!',tx:v,st:'color:var(--red)'})));
+  dlist('apisCont',   (rep.api_endpoints||[]).map(e=>({ic:'›',tx:e})));
+  dlist('emailsCont', (rep.emails||[]).map(e=>({ic:'✉',tx:e,lk:'mailto:'+e})));
+  dlist('phonesCont', (rep.phones||[]).map(p=>({ic:'☏',tx:p})));
+  dlist('subsCont',   (rep.subdomains||[]).map(s=>({ic:'↗',tx:s,lk:'https://'+s})));
+  dlist('pagesCont',  (rep.pages||[]).map(pg=>({ic:'›',tx:pg.url,lk:pg.url,bd:pg.status_code})));
+  renderTech(rep.tech||{});
+  setStatus(`✅ ${rep.total_pages} pages · ${rep.regex_total_hits||0} hits`);
+}
 
-    document.querySelectorAll('input, select').forEach(el => { el.addEventListener('change', updateCliPreview); el.addEventListener('input', updateCliPreview); });
+function renderHits(rep){
+  const hits=rep.regex_matched_urls||[];
+  const pct=rep.regex_pattern_hit_count||{};
+  $('patSum').innerHTML=Object.entries(pct).sort((a,b)=>b[1]-a[1])
+    .map(([p,c])=>`<div class="psum"><span class="pn">${esc(p)}</span><span style="color:var(--dim)">→</span><span class="pc">${c}</span><span style="color:var(--dim);font-size:8px">p</span></div>`).join('');
+  if(!hits.length){
+    $('regexCont').innerHTML=`<div class="empty"><div class="big">${S.pats.length?'🔍':'⚡'}</div><p>${S.pats.length?'No pages matched your patterns.':'No patterns set.<br>Add patterns on the left and re-run.'}</p></div>`;
+    return;
+  }
+  $('regexCont').innerHTML=hits.map((h,i)=>`
+    <div class="hrow">
+      <div class="hurl"><span style="color:var(--dim);flex-shrink:0">${i+1}.</span><a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.url)}</a></div>
+      <div class="htitle">${esc(h.title||'')}</div>
+      <div class="hpats">${(h.matched_patterns||[]).map(p=>`<span class="hptag">${esc(p)}</span>`).join('')}</div>
+      ${(h.matches||[]).map(m=>`
+        <div class="hmatch">${esc(m.match_text)}<span class="hct" style="margin-left:8px">${m.match_count}×</span></div>
+        <div class="hctx">Context: ${esc(m.context)}</div>`).join('')}
+    </div>`).join('');
+}
 
-    document.querySelectorAll('.tab').forEach(tab => { tab.addEventListener('click', () => { document.querySelectorAll('.tab').forEach(t => t.classList.remove('active')); document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active')); tab.classList.add('active'); document.getElementById('pane' + (tab.dataset.tab.charAt(0).toUpperCase() + tab.dataset.tab.slice(1))).classList.add('active'); }); });
+function renderForms(rep){
+  const forms=rep.forms||[];
+  if(!forms.length){$('formsCont').innerHTML='<div class="empty"><div class="big">📝</div><p>No forms found.</p></div>';return}
+  $('formsCont').innerHTML=forms.map(f=>{
+    const flags=[];
+    if(f.has_password)   flags.push('<span class="ff ff-p">PASSWORD</span>');
+    if(f.has_file_upload)flags.push('<span class="ff ff-f">UPLOAD</span>');
+    flags.push(f.has_csrf_token?'<span class="ff ff-ok">CSRF ✓</span>':'<span class="ff ff-nc">NO CSRF</span>');
+    const names=(f.inputs||[]).filter(i=>i.name).map(i=>esc(i.name)).slice(0,10).join(', ');
+    const hidden=(f.inputs||[]).filter(i=>i.type==='hidden'&&i.value).map(i=>`${esc(i.name)}=${esc(i.value.substring(0,24))}`).join(', ');
+    return `<div class="fcard ${!f.has_csrf_token?'bad':''}">
+      <div class="ftop">
+        <span class="fmeth">${esc(f.method)}</span>
+        <span class="faction">${esc((f.action||'').substring(0,80))}</span>
+        <div class="fflags">${flags.join('')}</div>
+      </div>
+      ${names?`<div class="ffield">Fields: ${names}</div>`:''}
+      ${hidden?`<div class="ffield fhid">Hidden: ${hidden}</div>`:''}
+      ${f.enctype?`<div class="ffield">Enc: ${esc(f.enctype)}</div>`:''}
+    </div>`;
+  }).join('');
+}
 
-    let scanInterval = null;
+function dlist(id,items){
+  const el=$(id);
+  if(!items.length){el.innerHTML='<div style="color:var(--dim);font-size:10px;padding:8px 0">Nothing found.</div>';return}
+  el.innerHTML=items.map(it=>`
+    <div class="di">
+      <span class="di-ic" style="${it.st||''}">${it.ic||'›'}</span>
+      <span class="di-tx" style="${it.st||''}">${it.lk?`<a href="${esc(it.lk)}" target="_blank" rel="noopener">${esc(it.tx)}</a>`:esc(it.tx)}</span>
+      ${it.bd!==undefined?`<span class="di-bd">${it.bd}</span>`:''}
+    </div>`).join('');
+}
 
-    function startScan() {
-      const url = document.getElementById('targetUrl').value.trim();
-      if (!url) { showToast('Please enter a target URL', true); return; }
-      state.scanning = true; state.aborted = false; state.report = null;
-      document.getElementById('startBtn').disabled = true;
-      document.getElementById('stopBtn').classList.remove('hidden');
-      document.getElementById('resultsSection').classList.remove('hidden');
-      document.getElementById('progressBar').style.width = '0%';
-      document.getElementById('logBox').innerHTML = '';
-      document.getElementById('regexHitsContainer').innerHTML = '';
-      document.getElementById('patternSummary').innerHTML = '';
-      document.getElementById('statsRow').innerHTML = '';
-      document.getElementById('pagesList').innerHTML = '';
-      document.getElementById('emailsList').innerHTML = '';
-      document.getElementById('phonesList').innerHTML = '';
-      document.getElementById('subdomainsList').innerHTML = '';
-      document.getElementById('apisList').innerHTML = '';
-      document.getElementById('techContent').innerHTML = '';
-      setStatus(' Crawling…');
-      addLog('info', `Target: ${url}`);
-      addLog('info', `Depth: ${document.getElementById('maxDepth').value} | Pages: ${document.getElementById('maxPages').value} | Concurrency: ${document.getElementById('concurrency').value}`);
-      if (state.patterns.length) addLog('info', `Regex patterns (${state.patterns.length}): ${state.patterns.join(' | ')}`);
-      else addLog('warn', 'No regex patterns set — all pages will be collected');
-      fetch('/api/scrape', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(buildConfig()) })
-        .then(r => { if (!r.ok) throw new Error('API not available'); return r.json(); })
-        .then(report => handleReport(report))
-        .catch(() => runDemoMode(url));
-    }
+function renderTech(t){
+  const flds=[['Server',t.server||'—'],['Powered By',t.powered_by||'—'],['CMS',t.cms||'—'],['WAF',t.waf||'—'],['CDN',t.cdn||'—'],['Frameworks',(t.frameworks||[]).join(', ')||'—']];
+  const grid=flds.map(([l,v])=>`<div class="tc"><div class="tclbl">${l}</div><div class="tcval${v==='—'?' e':''}">${esc(v)}</div></div>`).join('');
+  const miss=(t.missing_security_headers||[]);
+  const pres=Object.entries(t.security_headers||{});
+  $('techCont').innerHTML=
+    `<div class="tgrid">${grid}</div>`
+    +(miss.length?`<div style="font-size:11px;color:var(--red);margin-top:10px">⚠ Missing: ${miss.map(h=>`<code style="color:var(--yellow)">${esc(h)}</code>`).join(', ')}</div>`:'')
+    +(pres.length?`<div style="font-size:11px;color:var(--green);margin-top:5px">✓ Present: ${pres.map(([h])=>`<code style="color:var(--dim)">${esc(h)}</code>`).join(', ')}</div>`:'');
+}
 
-    function stopScan() { state.aborted = true; if (scanInterval) { clearInterval(scanInterval); scanInterval = null; } setStatus('⏹ Stopped'); document.getElementById('startBtn').disabled = false; document.getElementById('stopBtn').classList.add('hidden'); addLog('warn', 'Scan stopped by user.'); }
+/* ── Save / copy ───────────────────────── */
+function copyHitUrls(){
+  if(!S.report)return toast('No results',true);
+  const urls=(S.report.regex_matched_urls||[]).map(h=>h.url);
+  if(!urls.length)return toast('No hits',true);
+  navigator.clipboard.writeText(urls.join('\n')).then(()=>toast(`Copied ${urls.length} URLs`));
+}
+function saveHitUrls(){
+  if(!S.report)return toast('No results',true);
+  const urls=(S.report.regex_matched_urls||[]).map(h=>h.url);
+  if(!urls.length)return toast('No hits',true);
+  dl(urls.join('\n'),'CREEPER_matched_urls.txt');toast(`Saved ${urls.length} URLs`);
+}
+function saveReport(){
+  if(!S.report)return toast('No results',true);
+  dl(JSON.stringify(S.report,null,2),'CREEPER_report.json');toast('Saved full JSON report');
+}
+function saveFormsCsv(){
+  if(!S.report)return toast('No results',true);
+  const forms=S.report.forms||[];
+  const hdr=['action','method','enctype','input_count','has_password','has_file_upload','has_csrf_token'];
+  const rows=forms.map(f=>hdr.map(k=>`"${String(f[k]??'').replace(/"/g,'""')}"`).join(','));
+  dl([hdr.join(','),...rows].join('\n'),'CREEPER_forms.csv');toast(`Saved ${forms.length} forms`);
+}
+function savePagesCsv(){
+  if(!S.report)return toast('No results',true);
+  const pages=S.report.pages||[];
+  const hdr=['url','title','status_code','response_time_ms','matched_patterns'];
+  const rows=pages.map(p=>hdr.map(k=>{const v=p[k];const s=Array.isArray(v)?v.join('|'):(v??'');return`"${String(s).replace(/"/g,'""')}"`}).join(','));
+  dl([hdr.join(','),...rows].join('\n'),'CREEPER_pages.csv');toast(`Saved ${pages.length} pages`);
+}
+function copyKey(k){
+  if(!S.report)return toast('No data',true);
+  const list=S.report[k]||[];
+  navigator.clipboard.writeText(list.join('\n')).then(()=>toast(`Copied ${list.length} items`));
+}
+function saveKey(k,name){
+  if(!S.report)return toast('No data',true);
+  const list=S.report[k]||[];
+  dl(list.join('\n'),name);toast(`Saved ${list.length} items`);
+}
 
-    function buildConfig() {
-      const exports = [];
-      if (document.getElementById('expJson').checked) exports.push('json');
-      if (document.getElementById('expCsv').checked) exports.push('csv');
-      if (document.getElementById('expSqlite').checked) exports.push('sqlite');
-      return { url: document.getElementById('targetUrl').value.trim(), max_depth: +document.getElementById('maxDepth').value, max_pages: +document.getElementById('maxPages').value, concurrency: +document.getElementById('concurrency').value, delay_min: +document.getElementById('delayMin').value, delay_max: +document.getElementById('delayMax').value, timeout: +document.getElementById('timeout').value, use_js: document.getElementById('optJs').checked, respect_robots: document.getElementById('optRobots').checked, verify_ssl: document.getElementById('optSsl').checked, match_only: document.getElementById('optMatchOnly').checked, regex_patterns: state.patterns, export_formats: exports };
-    }
+/* ── Log / status ──────────────────────── */
+function log(type,msg){
+  const box=$('logBox');
+  const d=document.createElement('div');
+  d.className='le'+(type?' '+type:'');
+  d.textContent=`[${new Date().toISOString().substring(11,23)}] ${msg}`;
+  box.appendChild(d);box.scrollTop=box.scrollHeight;
+}
+function setStatus(msg){$('statusLbl').textContent=msg;$('progLbl').textContent=msg}
 
-    function runDemoMode(url) {
-      addLog('warn', '[DEMO MODE] No backend detected. Showing simulated crawl output.');
-      addLog('', 'To run real scans: python scrape_cli.py <url> [options]');
-      const totalPages = Math.min(+document.getElementById('maxPages').value, 20);
-      const domain = (() => { try { return new URL(url).hostname; } catch { return 'example.com'; } })();
-      const fakePaths = ['/', '/about', '/team', '/contact', '/blog', '/jobs', '/security', '/profiles/john-doe', '/profiles/jane-smith', '/profiles/hacker42', '/users/pentester99', '/users/ctf-champion', '/posts/security-tips', '/search?q=cyber', '/directory/security', '/members/red-team', '/people/oscp-certified', '/articles/bug-bounty', '/groups/ethical-hackers', '/events/defcon', '/careers/security-engineer'];
-      let count = 0, hitCount = 0;
-      const report = { target: url, scraped_at: new Date().toISOString(), total_pages: totalPages, avg_response_time_ms: 0, regex_patterns_used: [...state.patterns], regex_pattern_errors: [], regex_matched_urls: [], regex_total_hits: 0, regex_pattern_hit_count: {}, emails: [], phones: [], forms: [], comments: [], subdomains: [], api_endpoints: [], js_sensitive_vars: [], social_links: [], external_links: [], pages_by_status: { 200: 0 }, tech: { server: 'nginx/1.24', cms: '', waf: 'Cloudflare', cdn: 'Cloudflare', frameworks: ['React'], missing_security_headers: ['content-security-policy', 'permissions-policy'] }, pages: [] };
-      const fakeEmails = ['admin@' + domain, 'security@' + domain, 'contact@' + domain];
-      const fakeSubdomains = ['api.' + domain, 'mail.' + domain, 'blog.' + domain];
-      report.emails = fakeEmails; report.subdomains = fakeSubdomains; report.api_endpoints = ['/api/v1/users', '/api/v2/profiles', '/graphql'];
-      scanInterval = setInterval(() => {
-        if (state.aborted || count >= totalPages) {
-          clearInterval(scanInterval); scanInterval = null;
-          if (!state.aborted) { report.total_pages = count; report.pages_by_status[200] = count; report.avg_response_time_ms = Math.round(120 + Math.random() * 200); report.regex_total_hits = hitCount; handleReport(report); document.getElementById('startBtn').disabled = false; document.getElementById('stopBtn').classList.add('hidden'); setStatus('✅ Scan complete'); addLog('done', `Scan complete. ${count} pages crawled, ${hitCount} regex hits.`); }
-          return;
-        }
-        count++;
-        const path = fakePaths[count % fakePaths.length];
-        const pageUrl = url.replace(/\/$/, '') + path;
-        const pct = Math.round((count / totalPages) * 100);
-        document.getElementById('progressBar').style.width = pct + '%';
-        document.getElementById('progressLabel').textContent = `Crawling page ${count}/${totalPages} — ${pageUrl}`;
-        let pageMatched = false, matchedPats = [], matches = [];
-        state.patterns.forEach(pat => {
-          const keywords = ['pentester', 'CTF', 'bug bounty', 'security', 'hacker', 'red team', 'OSCP', 'exploit'];
-          const randomHit = keywords.some(kw => path.toLowerCase().includes(kw.substring(0, 4)));
-          const alwaysHit = Math.random() < 0.15;
-          if (randomHit || alwaysHit) {
-            pageMatched = true; matchedPats.push(pat);
-            report.regex_pattern_hit_count[pat] = (report.regex_pattern_hit_count[pat] || 0) + 1;
-            matches.push({ pattern: pat, match_text: `[demo match for: ${pat}]`, match_count: 1 + Math.floor(Math.random() * 5), context: `…profile shows expertise in ${pat} and related fields…` });
-          }
-        });
-        if (pageMatched && state.patterns.length > 0) { hitCount++; addLog('hit', `HIT [${matchedPats.join(', ')}] → ${pageUrl}`); report.regex_matched_urls.push({ url: pageUrl, title: `Profile — ${path.split('/').pop() || 'Home'}`, matched_patterns: matchedPats, matches }); }
-        else { addLog('', `  ${count < 10 ? ' ' : ''}${count}  ${pageUrl}`); }
-      }, 200);
-    }
-
-    function handleReport(report) {
-      state.report = report;
-      const stats = [{ label: 'Pages', value: report.total_pages, hit: false }, { label: 'Regex Hits', value: report.regex_total_hits || 0, hit: true }, { label: 'Emails', value: (report.emails || []).length, hit: false }, { label: 'Phones', value: (report.phones || []).length, hit: false }, { label: 'Subdomains', value: (report.subdomains || []).length, hit: false }, { label: 'API Routes', value: (report.api_endpoints || []).length, hit: false }];
-      document.getElementById('statsRow').innerHTML = stats.map(s => `<div class="stat-card ${s.hit ? 'hit-card' : ''}"><div class="stat-value">${s.value}</div><div class="stat-label">${s.label}</div></div>`).join('');
-      document.getElementById('tcRegex').textContent = report.regex_total_hits || 0;
-      document.getElementById('tcPages').textContent = report.total_pages;
-      document.getElementById('tcEmails').textContent = (report.emails || []).length;
-      document.getElementById('tcPhones').textContent = (report.phones || []).length;
-      document.getElementById('tcSubdomains').textContent = (report.subdomains || []).length;
-      document.getElementById('tcApis').textContent = (report.api_endpoints || []).length;
-      renderRegexHits(report);
-      renderSimpleList('pagesList', (report.pages || []).map(p => ({ text: p.url, badge: p.status_code, link: p.url, icon: '›' })));
-      renderSimpleList('emailsList', (report.emails || []).map(e => ({ text: e, icon: '✉', link: 'mailto:' + e })));
-      renderSimpleList('phonesList', (report.phones || []).map(p => ({ text: p, icon: '☏' })));
-      renderSimpleList('subdomainsList', (report.subdomains || []).map(s => ({ text: s, icon: '↗', link: 'https://' + s })));
-      renderSimpleList('apisList', (report.api_endpoints || []).map(e => ({ text: e, icon: '›' })));
-      renderTech(report.tech || {});
-      document.getElementById('progressBar').style.width = '100%';
-    }
-
-    function renderRegexHits(report) {
-      const hits = report.regex_matched_urls || [];
-      const patCounts = report.regex_pattern_hit_count || {};
-      const container = document.getElementById('regexHitsContainer');
-      const summary = document.getElementById('patternSummary');
-      summary.innerHTML = Object.entries(patCounts).sort((a, b) => b[1] - a[1]).map(([pat, cnt]) => `<div class="pattern-stat"><span class="p-name">${escHtml(pat)}</span><span class="p-sep">→</span><span class="p-count">${cnt}</span><span class="p-sep" style="font-size:10px;color:var(--text-dim)">pages</span></div>`).join('');
-      if (!hits.length) { container.innerHTML = `<div class="no-hits"><div class="big">${state.patterns.length ? '🔍' : '⚡'}</div><div>${state.patterns.length ? 'No pages matched your regex patterns on this crawl.' : 'No regex patterns were set.<br>Add patterns above and re-run to hunt specific content.'}</div></div>`; return; }
-      container.innerHTML = hits.map((hit, i) => `<div class="hit-row"><div class="hit-url"><span style="color:var(--text-dim);flex-shrink:0">${i + 1}.</span><a href="${escHtml(hit.url)}" target="_blank" rel="noopener">${escHtml(hit.url)}</a></div><div class="hit-title">${escHtml(hit.title || '')}</div><div class="hit-patterns">${(hit.matched_patterns || []).map(p => `<span class="hit-pattern-tag">${escHtml(p)}</span>`).join('')}</div>${(hit.matches || []).map(m => `<div class="hit-match"><span>${escHtml(m.match_text)}</span><span class="hit-count-badge" style="margin-left:8px">${m.match_count}×</span></div><div class="hit-context">Context: ${escHtml(m.context)}</div>`).join('')}</div>`).join('');
-    }
-
-    function renderSimpleList(containerId, items) {
-      const el = document.getElementById(containerId);
-      if (!items.length) { el.innerHTML = '<div style="color:var(--text-dim);font-size:12px;padding:12px 0">No data found.</div>'; return; }
-      el.innerHTML = items.map(item => `<div class="data-list-item"><span class="item-icon">${item.icon || '›'}</span><span class="item-text">${item.link ? `<a href="${escHtml(item.link)}" target="_blank" rel="noopener">${escHtml(item.text)}</a>` : escHtml(item.text)}</span>${item.badge !== undefined ? `<span class="item-badge">${item.badge}</span>` : ''}</div>`).join('');
-    }
-
-    function renderTech(tech) {
-      const fields = [['Server', tech.server || '—'], ['Powered By', tech.powered_by || '—'], ['CMS', tech.cms || '—'], ['WAF', tech.waf || '—'], ['CDN', tech.cdn || '—'], ['Frameworks', (tech.frameworks || []).join(', ') || '—']];
-      const grid = fields.map(([label, val]) => `<div class="tech-card"><div class="tech-card-label">${label}</div><div class="tech-card-value ${val === '—' ? 'empty' : ''}">${escHtml(val)}</div></div>`).join('');
-      const missing = (tech.missing_security_headers || []);
-      const missingHtml = missing.length ? `<div style="margin-top:14px;font-size:12px;color:var(--danger)">⚠ Missing security headers: ${missing.map(h => `<code style="color:var(--warn)">${escHtml(h)}</code>`).join(', ')}</div>` : '';
-      document.getElementById('techContent').innerHTML = `<div class="tech-grid">${grid}</div>${missingHtml}`;
-    }
-
-    function saveMatchedUrls() { if (!state.report) { showToast('No scan results yet', true); return; } const hits = state.report.regex_matched_urls || []; if (!hits.length) { showToast('No regex hits to save', true); return; } const lines = hits.map(h => h.url); downloadText(lines.join('\n'), 'CREEPER_matched_urls.txt'); showToast(`Saved ${lines.length} URLs`); }
-    function copyMatchedUrls() { if (!state.report) { showToast('No scan results yet', true); return; } const hits = state.report.regex_matched_urls || []; if (!hits.length) { showToast('No regex hits to copy', true); return; } navigator.clipboard.writeText(hits.map(h => h.url).join('\n')).then(() => showToast(`Copied ${hits.length} URLs`)).catch(() => showToast('Copy failed', true)); }
-    function saveFullReport() { if (!state.report) { showToast('No scan results yet', true); return; } downloadText(JSON.stringify(state.report, null, 2), 'CREEPER_report.json'); showToast('Saved full report as JSON'); }
-    function savePagesAsCsv() { if (!state.report) { showToast('No scan results yet', true); return; } const pages = state.report.pages || []; const headers = ['url', 'title', 'status_code', 'response_time_ms', 'matched_patterns']; const rows = pages.map(p => headers.map(h => { const val = p[h]; const str = Array.isArray(val) ? val.join('|') : (val ?? ''); return `"${String(str).replace(/"/g, '""')}"`; }).join(',')); downloadText([headers.join(','), ...rows].join('\n'), 'CREEPER_pages.csv'); showToast('Saved pages as CSV'); }
-    function copyList(key) { if (!state.report) { showToast('No data', true); return; } const list = state.report[key] || []; navigator.clipboard.writeText(list.join('\n')).then(() => showToast(`Copied ${list.length} items`)).catch(() => showToast('Copy failed', true)); }
-    function saveList(key, filename) { if (!state.report) { showToast('No data', true); return; } const list = state.report[key] || []; downloadText(list.join('\n'), filename); showToast(`Saved ${list.length} items`); }
-    function downloadText(text, filename) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' })); a.download = filename; a.click(); URL.revokeObjectURL(a.href); }
-    function addLog(type, msg) { const box = document.getElementById('logBox'); const d = document.createElement('div'); d.className = 'log-entry ' + (type || ''); d.textContent = `[${new Date().toISOString().substring(11, 23)}] ${msg}`; box.appendChild(d); box.scrollTop = box.scrollHeight; }
-    function setStatus(msg) { document.getElementById('statusLabel').textContent = msg; document.getElementById('progressLabel').textContent = msg; }
-    let toastTimeout = null;
-    function showToast(msg, isErr = false) { const t = document.getElementById('toast'); t.textContent = msg; t.style.borderColor = isErr ? 'var(--danger)' : 'var(--accent3)'; t.style.color = isErr ? 'var(--danger)' : 'var(--accent3)'; t.classList.add('show'); if (toastTimeout) clearTimeout(toastTimeout); toastTimeout = setTimeout(() => t.classList.remove('show'), 2800); }
-    function escHtml(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
-    updateCliPreview(); renderTags();
-  </script>
+/* ── Init ──────────────────────────────── */
+renderKvs();renderTags();updateCli();
+</script>
 </body>
-
 </html>
