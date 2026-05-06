@@ -36,6 +36,10 @@ _lock = threading.Lock()
 def index():
     return send_from_directory(".", "CREEPER_scraper_gui.html")
 
+@app.route("/<path:filename>")
+def serve_file(filename):
+    return send_from_directory(".", filename)
+
 
 @app.route("/api/scrape", methods=["POST"])
 def api_scrape():

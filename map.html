@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CREEPER v3 — Findings Map</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+:root {
+  --bg:    #050a0f; --bg2: #080f18; --bg3: #0c1825;
+  --panel: #0a141f; --border: #1a3a5c; --border2: #0f2540;
+  --cyan:  #00d4ff; --purple: #c678dd; --green: #39ff14;
+  --red:   #ff3b5c; --yellow: #ffb347; --orange: #ff6b35;
+  --text:  #c8d8e8; --dim: #4a6a8a; --bright: #e8f4ff;
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{
+  height:100vh; margin:0;
+  background:var(--bg); color:var(--text);
+  font-family:'Rajdhani',sans-serif; font-size:15px;
+  overflow:hidden; display:flex; flex-direction:column;
+}
+body::before{
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background-image:
+    linear-gradient(rgba(0,212,255,.025) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(0,212,255,.025) 1px,transparent 1px);
+  background-size:44px 44px;
+}
+body::after{
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:1;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.04) 2px,rgba(0,0,0,.04) 4px);
+}
+.hdr{
+  display:flex;align-items:center;gap:12px;
+  padding:14px 18px 12px;
+  border-bottom:1px solid var(--border2);
+  flex-shrink:0; position:relative; z-index:10;
+  background:rgba(5,10,15,.92); backdrop-filter:blur(12px);
+}
+.hdr svg{width:42px;height:42px;flex-shrink:0}
+.hdr h1{
+  font-family:'Orbitron',monospace;font-size:22px;font-weight:900;letter-spacing:4px;
+  background:linear-gradient(90deg,var(--cyan),var(--purple));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.hdr p{color:var(--dim);font-size:10px;letter-spacing:2px;text-transform:uppercase;margin-top:2px}
+
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:9px 18px;border-radius:4px;border:none;cursor:pointer;
+  font-family:'Orbitron',monospace;font-size:10px;letter-spacing:2px;
+  font-weight:700;text-transform:uppercase;transition:.15s; text-decoration:none;
+}
+.btn-copy{background:rgba(198,120,221,.07);color:var(--purple);border:1px solid rgba(198,120,221,.3)}
+.btn-copy:hover{background:rgba(198,120,221,.14)}
+.btn-start{background:linear-gradient(135deg,rgba(0,212,255,.14),rgba(0,212,255,.07));color:var(--cyan);border:1px solid var(--cyan);}
+.btn-start:hover{background:rgba(0,212,255,.22);box-shadow:0 0 15px rgba(0,212,255,.3)}
+
+.controls{
+  position:relative; z-index:10; padding:15px 18px; border-bottom:1px solid var(--border2);
+  display:flex; gap:15px; align-items:center; background:rgba(8,15,24,.8);
+}
+.controls input[type="file"]{
+  display:none;
+}
+
+#map-container {
+  flex: 1;
+  position: relative;
+  z-index: 5;
+  overflow: hidden;
+  cursor: grab;
+}
+#map-container:active { cursor: grabbing; }
+
+/* D3 Elements */
+.node circle {
+  fill: var(--bg2);
+  stroke: var(--cyan);
+  stroke-width: 2px;
+  transition: all 0.3s;
+}
+.node:hover circle {
+  fill: var(--cyan);
+  box-shadow: 0 0 10px var(--cyan);
+}
+.node text {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  fill: var(--text);
+  text-shadow: 0 1px 4px rgba(0,0,0,1);
+}
+.link {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 1.5px;
+  opacity: 0.6;
+}
+
+.toast{
+  position:fixed;bottom:20px;right:20px;
+  background:var(--panel);border:1px solid var(--green);color:var(--green);
+  font-family:'Share Tech Mono',monospace;font-size:11px;
+  padding:8px 14px;border-radius:4px;box-shadow:0 0 16px rgba(57,255,20,.16);
+  z-index:999;opacity:0;transform:translateY(6px);
+  transition:opacity .18s,transform .18s;pointer-events:none;
+}
+.toast.on{opacity:1;transform:translateY(0)}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <svg viewBox="0 0 42 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="21" cy="21" r="19" stroke="#00d4ff" stroke-width="1" stroke-dasharray="4 2" opacity=".4"/>
+    <circle cx="21" cy="21" r="12" stroke="#00d4ff" stroke-width=".8" opacity=".55"/>
+    <circle cx="21" cy="21" r="4" fill="#00d4ff" opacity=".9"/>
+    <circle cx="21" cy="21" r="7" stroke="#c678dd" stroke-width=".6" stroke-dasharray="2 2" opacity=".6"/>
+  </svg>
+  <div>
+    <h1>CREEPER MAP</h1>
+    <p>JSON Findings Visualizer</p>
+  </div>
+  <div style="margin-left:auto; display:flex; gap:10px;">
+    <a href="CREEPER_scraper_gui.html" class="btn btn-copy" style="padding:6px 12px; font-size:10px;">Scraper UI</a>
+  </div>
+</div>
+
+<div class="controls">
+  <label for="jsonUpload" class="btn btn-start">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+    Upload JSON Report
+  </label>
+  <input type="file" id="jsonUpload" accept=".json">
+  <span id="fileName" style="font-family:'Share Tech Mono', monospace; font-size:12px; color:var(--dim)">No file loaded</span>
+</div>
+
+<div id="map-container"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+let svg, g, tree, root;
+const width = window.innerWidth;
+const height = window.innerHeight - 130;
+let i = 0;
+
+function toast(msg, err=false){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.borderColor = err ? 'var(--red)' : 'var(--green)';
+  t.style.color = err ? 'var(--red)' : 'var(--green)';
+  t.classList.add('on');
+  setTimeout(()=>t.classList.remove('on'), 3000);
+}
+
+function processData(json) {
+  const children = [];
+
+  if (json.pages && json.pages.length) {
+    children.push({
+      name: `Pages (${json.pages.length})`,
+      children: json.pages.map(p => ({ name: p.url }))
+    });
+  }
+
+  if (json.api_endpoints && json.api_endpoints.length) {
+    children.push({
+      name: `API Endpoints (${json.api_endpoints.length})`,
+      children: json.api_endpoints.map(e => ({ name: e }))
+    });
+  }
+
+  if (json.forms && json.forms.length) {
+    children.push({
+      name: `Forms (${json.forms.length})`,
+      children: json.forms.map(f => ({ name: f.action || 'Unknown Action' }))
+    });
+  }
+
+  if (json.js_sensitive_vars && json.js_sensitive_vars.length) {
+    children.push({
+      name: `JS Secrets (${json.js_sensitive_vars.length})`,
+      children: json.js_sensitive_vars.map(s => ({ name: s }))
+    });
+  }
+
+  if (json.regex_matched_urls && json.regex_matched_urls.length) {
+    children.push({
+      name: `Regex Hits (${json.regex_matched_urls.length})`,
+      children: json.regex_matched_urls.map(h => ({ name: h.url }))
+    });
+  }
+
+  if (json.subdomains && json.subdomains.length) {
+    children.push({
+      name: `Subdomains (${json.subdomains.length})`,
+      children: json.subdomains.map(s => ({ name: s }))
+    });
+  }
+  
+  if (json.emails && json.emails.length) {
+    children.push({
+      name: `Emails (${json.emails.length})`,
+      children: json.emails.map(e => ({ name: e }))
+    });
+  }
+
+  return {
+    name: json.target || "Root",
+    children: children.length ? children : [{name: "No data found"}]
+  };
+}
+
+function initD3(data) {
+  const container = d3.select("#map-container");
+  container.selectAll("*").remove();
+
+  svg = container.append("svg")
+      .attr("width", "100%")
+      .attr("height", "100%");
+      
+  const zoom = d3.zoom()
+      .scaleExtent([0.1, 4])
+      .on("zoom", (e) => {
+        g.attr("transform", e.transform);
+      });
+      
+  svg.call(zoom);
+
+  g = svg.append("g")
+      .attr("transform", `translate(120, ${document.getElementById('map-container').clientHeight / 2})`);
+
+  // We set initial zoom to a reasonable level based on tree size
+  svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity.translate(120, document.getElementById('map-container').clientHeight / 2).scale(0.8));
+
+  tree = d3.tree().nodeSize([30, 250]);
+
+  root = d3.hierarchy(data);
+  root.x0 = 0;
+  root.y0 = 0;
+
+  // Collapse after the second level
+  root.children.forEach(collapse);
+
+  update(root);
+}
+
+function collapse(d) {
+  if (d.children) {
+    d._children = d.children;
+    d._children.forEach(collapse);
+    d.children = null;
+  }
+}
+
+function update(source) {
+  const nodes = root.descendants().reverse();
+  const links = root.links();
+
+  tree(root);
+
+  const transition = svg.transition().duration(500);
+
+  const node = g.selectAll("g.node")
+    .data(nodes, d => d.id || (d.id = ++i));
+
+  const nodeEnter = node.enter().append("g")
+      .attr("class", "node")
+      .attr("transform", d => `translate(${source.y0 || source.y},${source.x0 || source.x})`)
+      .on("click", (e, d) => {
+        if (d.children) {
+          d._children = d.children;
+          d.children = null;
+        } else {
+          d.children = d._children;
+          d._children = null;
+        }
+        update(d);
+      });
+
+  nodeEnter.append("circle")
+      .attr("r", 1e-6)
+      .style("fill", d => d._children ? "var(--cyan)" : (d.children ? "var(--bg2)" : "var(--dim)"))
+      .style("stroke", d => d.children || d._children ? "var(--cyan)" : "var(--dim)");
+
+  nodeEnter.append("text")
+      .attr("dy", ".35em")
+      .attr("x", d => d.children || d._children ? -10 : 10)
+      .attr("text-anchor", d => d.children || d._children ? "end" : "start")
+      .text(d => {
+        let name = d.data.name;
+        if (name.length > 50) name = name.substring(0, 50) + "...";
+        return name;
+      });
+
+  const nodeUpdate = node.merge(nodeEnter).transition(transition)
+      .attr("transform", d => `translate(${d.y},${d.x})`);
+
+  nodeUpdate.select("circle")
+      .attr("r", 5)
+      .style("fill", d => d._children ? "var(--cyan)" : (d.children ? "var(--bg2)" : "var(--dim)"))
+      .style("stroke", d => d.children || d._children ? "var(--cyan)" : "var(--dim)");
+
+  const nodeExit = node.exit().transition(transition)
+      .attr("transform", d => `translate(${source.y},${source.x})`)
+      .remove();
+
+  nodeExit.select("circle").attr("r", 1e-6);
+  nodeExit.select("text").style("fill-opacity", 1e-6);
+
+  const link = g.selectAll("path.link")
+      .data(links, d => d.target.id);
+
+  const linkEnter = link.enter().insert("path", "g")
+      .attr("class", "link")
+      .attr("d", d => {
+        const o = {x: source.x0 || source.x, y: source.y0 || source.y};
+        return diagonal(o, o);
+      });
+
+  link.merge(linkEnter).transition(transition)
+      .attr("d", d => diagonal(d.source, d.target));
+
+  link.exit().transition(transition)
+      .attr("d", d => {
+        const o = {x: source.x, y: source.y};
+        return diagonal(o, o);
+      })
+      .remove();
+
+  nodes.forEach(d => {
+    d.x0 = d.x;
+    d.y0 = d.y;
+  });
+}
+
+function diagonal(s, t) {
+  return `M${t.y},${t.x}
+          C${(s.y + t.y) / 2},${t.x}
+           ${(s.y + t.y) / 2},${s.x}
+           ${s.y},${s.x}`;
+}
+
+document.getElementById('jsonUpload').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  document.getElementById('fileName').textContent = file.name;
+  
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    try {
+      const json = JSON.parse(evt.target.result);
+      const data = processData(json);
+      initD3(data);
+      toast('Map successfully loaded');
+    } catch(err) {
+      toast('Failed to parse JSON file', true);
+      console.error(err);
+    }
+  };
+  reader.readAsText(file);
+});
+</script>
+</body>
+</html>
