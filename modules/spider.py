@@ -31,12 +31,14 @@ from .extractor import (
     extract_js_vars,
     extract_links,
     extract_meta,
+    extract_parameters,
     extract_phones,
     extract_subdomains,
     fingerprint_tech,
     needs_js_render,
 )
-from .models import ScrapedPage
+from .models import ScrapedPage, JSFile
+from .js_parser import fetch_and_parse_js, parse_js_text, fetch_sourcemap
 from .regex_engine import RegexEngine
 from .stealth import DomainRateLimiter, StealthHeaders, detect_waf_block
 from .ninja import NinjaStealth
@@ -95,6 +97,8 @@ class Spider:
         self.visited:    Set[str]        = set()
         self.results:    List[ScrapedPage] = []
         self.disallowed: Set[str]        = set()
+        self.js_results: List[JSFile]      = []   # parsed JS files
+        self._js_seen:   Set[str]          = set() # already-fetched JS URLs
 
     # ── Robots.txt ────────────────────────────────────────────────────────────
 
@@ -199,6 +203,9 @@ class Spider:
                         if self._use_pw and needs_js_render(html):
                             page = await self._playwright_render(url, page)
 
+                        # Fetch and parse JS files found on this page
+                        await self._parse_js_files(page)
+
                         return page
 
                 except (
@@ -266,8 +273,11 @@ class Spider:
             comments=extract_comments(html),
             meta=extract_meta(soup),
             subdomains=extract_subdomains(html, base_domain),
-            api_endpoints=extract_api_endpoints(html),
+            api_endpoints=extract_api_endpoints(html, base_url=url),
             js_variables=extract_js_vars(html),
+            parameters=[dict(p) for p in extract_parameters(soup, url, html)],
+            js_files=[],
+            sourcemaps=[],
             tech=tech,
             regex_matches=regex_matches,
             matched_patterns=matched_patterns,
@@ -307,3 +317,71 @@ class Spider:
             except Exception as exc:
                 logger.debug("Playwright failed for %s: %s", url, exc)
                 return base_page
+
+
+    # ── JS file fetching ──────────────────────────────────────────────────────
+
+    async def _parse_js_files(self, page: ScrapedPage) -> None:
+        """
+        Fetch every external JS file referenced on a page, parse each for
+        endpoints/secrets/subdomains, and merge findings back into the page
+        and the global js_results list.
+        """
+        from urllib.parse import urljoin, urlparse as _up
+        parsed = _up(page.url)
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        base_domain = parsed.netloc.lower().removeprefix("www.")
+
+        # Collect JS URLs: <script src>, plus any .js links we found
+        js_urls = []
+        for src in page.scripts:
+            if not src:
+                continue
+            full = src if src.startswith("http") else urljoin(page.url, src)
+            if full not in self._js_seen:
+                self._js_seen.add(full)
+                js_urls.append(full)
+
+        # Also scan inline <script> content directly from the page HTML
+        # (already done in extractor, but we re-run with the JS parser for
+        #  richer extraction — fetch_and_parse_js handles external URLs only)
+
+        if not js_urls:
+            return
+
+        logger.debug("Fetching %d JS files from %s", len(js_urls), page.url)
+        js_results = await fetch_and_parse_js(
+            js_urls=js_urls,
+            session=self._session,
+            semaphore=self._sem,
+            base_domain=base_domain,
+        )
+
+        # Merge findings into the page and global state
+        for r in js_results:
+            page.api_endpoints = list(dict.fromkeys(
+                page.api_endpoints + r.endpoints
+            ))[:120]
+            page.js_variables = list(dict.fromkeys(
+                page.js_variables + r.secrets
+            ))[:60]
+            page.subdomains = list(dict.fromkeys(
+                page.subdomains + r.subdomains
+            ))[:60]
+            page.sourcemaps = list(dict.fromkeys(
+                page.sourcemaps + r.sourcemaps
+            ))[:20]
+            page.js_files.append(r.url)
+
+            # Store full JS result globally
+            self.js_results.append(r)
+
+            # Follow sourcemaps — fetch and record original source paths
+            for sm_url in r.sourcemaps[:3]:
+                source_paths = await fetch_sourcemap(sm_url, self._session)
+                if source_paths:
+                    logger.info("Sourcemap %s → %d source files", sm_url, len(source_paths))
+                    page.comments.append(
+                        f"[SOURCEMAP] {sm_url} → {len(source_paths)} sources: "
+                        + ", ".join(source_paths[:5])
+                    )

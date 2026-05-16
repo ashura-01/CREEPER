@@ -128,7 +128,7 @@ RE_COMMENT = re.compile(r'<!--(.*?)-->', re.DOTALL)
 
 # API routes: /api/*, /v1/*, /graphql, /rest/*, /rpc, /webhook
 RE_API = re.compile(
-    r'''["'](?:https?://[^"']{0,80})?(/(?:api|v\d+|graphql|rest|gql|rpc|endpoint|webhook)[^"'\s<>]{0,100})["']'''
+    r'''["'](?:https?://[^"']{0,80})?(/(?:api|v\d+|graphql|rest|gql|rpc|endpoint|webhook|swagger|openapi|health|metrics|status)[^"'\s<>]{0,100})["']'''
 )
 
 # JS variable assignments whose names suggest secrets

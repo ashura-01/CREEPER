@@ -594,10 +594,12 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield}
       <div class="ph">
         <div class="pt c">API / Internal Endpoints</div>
         <div class="pacts">
-          <button class="btn btn-copy btn-sm" onclick="copyKey('api_endpoints')">Copy</button>
+          <input type="text" id="apiFilter" placeholder="filter…" oninput="filterApis()" style="background:var(--bg2);border:1px solid var(--border);color:var(--bright);font-family:'Share Tech Mono',monospace;font-size:11px;padding:4px 8px;border-radius:3px;outline:none;width:130px;">
+          <button class="btn btn-copy btn-sm" onclick="copyKey('api_endpoints')">Copy All</button>
           <button class="btn btn-save btn-sm" onclick="saveKey('api_endpoints','api_endpoints.txt')">Save</button>
         </div>
       </div>
+      <div style="font-size:10px;color:var(--dim);margin-bottom:8px;font-family:'Share Tech Mono',monospace" id="apiMeta"></div>
       <div class="dlist" id="apisCont"></div>
     </div>
 
@@ -661,7 +663,7 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield}
 
 <script>
 /* ── State ─────────────────────────────── */
-const S = { pats:[], kvs:[], scanning:false, aborted:false, report:null };
+const S = { pats:[], kvs:[], scanning:false, aborted:false, report:null, apis:[] };
 
 /* ── Utils ─────────────────────────────── */
 const $ = id => document.getElementById(id);
@@ -757,7 +759,7 @@ let _simInt=null;
 function startScan(){
   const url=$('iUrl').value.trim();
   if(!url){toast('Enter a target URL',true);return}
-  S.scanning=true;S.aborted=false;S.report=null;
+  S.scanning=true;S.aborted=false;S.report=null;S.apis=[];
   $('startBtn').disabled=true;$('stopBtn').classList.remove('hidden');
   ['regexCont','formsCont','secretsCont','apisCont','emailsCont','phonesCont',
    'subsCont','pagesCont','techCont','statsRow','patSum'].forEach(id=>{const e=$(id);if(e)e.innerHTML=''});
@@ -822,7 +824,7 @@ function runDemo(url,cfg){
     forms_with_password:[],forms_with_upload:[],forms_without_csrf:[],
     comments:['<!-- TODO: remove /debug before prod -->','<!-- API_KEY=demo-key-here -->'],
     subdomains:[`api.${domain}`,`dev.${domain}`,`staging.${domain}`,`mail.${domain}`],
-    api_endpoints:['/api/v1/users','/api/v2/tokens','/graphql','/internal/health','/api/v1/keys'],
+    api_endpoints:[url+'/api/v1/users',url+'/api/v2/tokens',url+'/graphql',url+'/internal/health',url+'/api/v1/keys'],
     js_sensitive_vars:[`apiKey=sk-demokey1234567890`,`[SECRET] AKIA1234567890EXAMPLE`,`[SOURCEMAP] main.js.map`],
     external_links:[],pages_by_status:{200:0},
     tech:{server:'nginx/1.24.0',cms:'WordPress',waf:'Cloudflare',cdn:'Cloudflare',
@@ -874,15 +876,17 @@ function runDemo(url,cfg){
 /* ── Render results ────────────────────── */
 function finalise(rep){
   S.report=rep;$('progBar').style.width='100%';
+  const wafSig=rep.waf_signals_detected||0;
   const defs=[
     {l:'Pages',v:rep.total_pages,c:''},
     {l:'Regex Hits',v:rep.regex_total_hits||0,c:'hit'},
     {l:'Forms',v:(rep.forms||[]).length,c:''},
-    {l:'No-CSRF',v:(rep.forms_without_csrf||[]).length,c:'wrn'},
-    {l:'JS Secrets',v:(rep.js_sensitive_vars||[]).length,c:'wrn'},
-    {l:'APIs',v:(rep.api_endpoints||[]).length,c:''},
-    {l:'Emails',v:(rep.emails||[]).length,c:''},
+    {l:'No-CSRF',v:(rep.forms_without_csrf||[]).length,c:(rep.forms_without_csrf||[]).length?'wrn':''},
+    {l:'JS Secrets',v:(rep.js_sensitive_vars||[]).length,c:(rep.js_sensitive_vars||[]).length?'wrn':''},
+    {l:'APIs',v:(rep.api_endpoints||[]).length,c:(rep.api_endpoints||[]).length?'hit':''},
+    {l:'Emails',v:(rep.emails||[]).length,c:(rep.emails||[]).length?'hit':''},
     {l:'Subdomains',v:(rep.subdomains||[]).length,c:''},
+    ...(wafSig?[{l:'WAF Blocked',v:wafSig,c:'wrn'}]:[]),
   ];
   $('statsRow').innerHTML=defs.map(d=>`<div class="sc ${d.c}"><div class="sv">${d.v}</div><div class="sl">${d.l}</div></div>`).join('');
   $('tcR').textContent=rep.regex_total_hits||0;
@@ -895,11 +899,46 @@ function finalise(rep){
   $('tcPg').textContent=rep.total_pages;
   renderHits(rep);renderForms(rep);
   dlist('secretsCont',(rep.js_sensitive_vars||[]).map(v=>({ic:'!',tx:v,st:'color:var(--red)'})));
-  dlist('apisCont',   (rep.api_endpoints||[]).map(e=>({ic:'›',tx:e})));
+  // Store resolved endpoints for filtering
+  S.apis = (rep.api_endpoints||[]).map(e=>{
+    let full = e;
+    if(e.startsWith('/') && rep.target){
+      try{ const u=new URL(rep.target); full=u.origin+e; }catch{}
+    }
+    return full;
+  });
+  renderApis(S.apis);
+  const apiMeta = $('apiMeta');
+  if(apiMeta){
+    const paths=S.apis.filter(e=>{ try{return new URL(e).pathname;} catch{return true;}});
+    apiMeta.textContent = `${S.apis.length} endpoint${S.apis.length!==1?'s':''} found — click to open in browser`;
+  }
   dlist('emailsCont', (rep.emails||[]).map(e=>({ic:'✉',tx:e,lk:'mailto:'+e})));
   dlist('phonesCont', (rep.phones||[]).map(p=>({ic:'☏',tx:p})));
   dlist('subsCont',   (rep.subdomains||[]).map(s=>({ic:'↗',tx:s,lk:'https://'+s})));
-  dlist('pagesCont',  (rep.pages||[]).map(pg=>({ic:'›',tx:pg.url,lk:pg.url,bd:pg.status_code})));
+  // Enhanced pages list with status color, response time and API count
+  const pageCont=$('pagesCont');
+  if(pageCont){
+    const pages=rep.pages||[];
+    if(!pages.length){pageCont.innerHTML='<div style="color:var(--dim);font-size:10px;padding:8px 0">Nothing found.</div>';}
+    else{
+      pageCont.innerHTML=pages.map(pg=>{
+        const sc=pg.status_code;
+        const scCol=sc>=500?'var(--red)':sc>=400?'var(--yellow)':sc>=300?'var(--dim)':'var(--green)';
+        const rt=pg.response_time_ms;
+        const rtCol=rt>2000?'var(--red)':rt>800?'var(--yellow)':'var(--dim)';
+        const apis=(pg.api_endpoints||[]).length;
+        const secrets=(pg.js_variables||[]).length;
+        return `<div class="di" style="padding:5px 0;border-bottom:1px solid var(--border2)">
+          <span class="di-ic" style="color:${scCol}">${sc}</span>
+          <span class="di-tx" style="flex:1;min-width:0"><a href="${esc(pg.url)}" target="_blank" rel="noopener" style="color:var(--text);word-break:break-all">${esc(pg.url)}</a></span>
+          ${apis?`<span style="font-size:9px;color:var(--cyan);border:1px solid rgba(0,212,255,.3);padding:0 4px;border-radius:3px;flex-shrink:0">${apis} API</span>`:''}
+          ${secrets?`<span style="font-size:9px;color:var(--red);border:1px solid rgba(255,59,92,.3);padding:0 4px;border-radius:3px;flex-shrink:0">${secrets}🔑</span>`:''}
+          <span style="font-size:9px;color:${rtCol};flex-shrink:0;font-family:'Share Tech Mono',monospace">${rt.toFixed?rt.toFixed(0):rt}ms</span>
+        </div>`;
+      }).join('');
+    }
+  }
   renderTech(rep.tech||{});
   setStatus(`✅ ${rep.total_pages} pages · ${rep.regex_total_hits||0} hits`);
 }
@@ -945,6 +984,61 @@ function renderForms(rep){
       ${f.enctype?`<div class="ffield">Enc: ${esc(f.enctype)}</div>`:''}
     </div>`;
   }).join('');
+}
+
+function renderApis(endpoints){
+  const cont=$('apisCont');
+  if(!cont)return;
+  if(!endpoints||!endpoints.length){
+    cont.innerHTML='<div style="color:var(--dim);font-size:10px;padding:8px 0">Nothing found.</div>';return;
+  }
+  // Filter out static assets that leaked through (css/js/font files)
+  const ASSET_EXT=/\.(css|js|woff2?|ttf|eot|png|jpg|svg|ico|map)(\?|$)/i;
+  const clean=endpoints.filter(e=>!ASSET_EXT.test(e));
+  if(!clean.length){
+    cont.innerHTML='<div style="color:var(--dim);font-size:10px;padding:8px 0">Nothing found.</div>';return;
+  }
+  // Store per-endpoint copy handlers using index to avoid inline JS quoting issues
+  cont._apis=clean;
+  cont.innerHTML=clean.map((e,i)=>{
+    // Classify endpoint type for badge — only match /vN/ path segments, not ?ver= query params
+    let badge='', bc='var(--dim)';
+    const lower=e.toLowerCase();
+    let pathname='';
+    try{pathname=new URL(e).pathname.toLowerCase();}catch{pathname=lower;}
+    if(/graphql|gql/.test(pathname)){badge='GraphQL';bc='var(--purple)';}
+    else if(/\/v\d+(\/|$)/.test(pathname)){const m=pathname.match(/\/(v\d+)(\/|$)/);badge=m?m[1].toUpperCase():'REST';bc='var(--cyan)';}
+    else if(/webhook/.test(pathname)){badge='Webhook';bc='var(--yellow)';}
+    else if(/internal|health|debug|admin/.test(pathname)){badge='Internal';bc='var(--red)';}
+    else if(/rest|api/.test(pathname)){badge='REST';bc='var(--cyan)';}
+    // Show path separately from origin
+    let display=e, origin='';
+    try{const u=new URL(e);origin=u.origin;display=u.pathname+(u.search||'');}catch{}
+    return `<div class="di" style="align-items:flex-start;flex-direction:column;padding:6px 0;border-bottom:1px solid var(--border2)">
+      <div style="display:flex;align-items:center;gap:6px;width:100%">
+        <span class="di-ic">›</span>
+        ${badge?`<span style="font-size:9px;padding:1px 5px;border-radius:3px;border:1px solid ${bc};color:${bc};font-family:'Share Tech Mono',monospace;flex-shrink:0">${badge}</span>`:''}
+        <a href="${esc(e)}" target="_blank" rel="noopener" style="color:var(--cyan);word-break:break-all;flex:1;font-size:11px">${esc(display)}</a>
+        <button data-api-idx="${i}" class="api-copy-btn" style="background:transparent;border:1px solid var(--border);color:var(--dim);font-size:9px;padding:1px 5px;border-radius:3px;cursor:pointer;flex-shrink:0;font-family:'Share Tech Mono',monospace" title="Copy URL">⎘</button>
+      </div>
+      ${origin?`<div style="font-size:9px;color:var(--dim);padding-left:22px;margin-top:2px">${esc(origin)}</div>`:''}
+    </div>`;
+  }).join('');
+  // Attach copy handlers via event delegation — avoids all inline JS quoting issues
+  cont.onclick=function(ev){
+    const btn=ev.target.closest('.api-copy-btn');
+    if(!btn)return;
+    const idx=parseInt(btn.dataset.apiIdx,10);
+    const url=cont._apis[idx];
+    if(url)navigator.clipboard.writeText(url).then(()=>toast('Copied!')).catch(()=>{});
+  };
+}
+
+function filterApis(){
+  const q=($('apiFilter')||{}).value||'';
+  if(!S.apis)return;
+  const filtered=q?S.apis.filter(e=>e.toLowerCase().includes(q.toLowerCase())):S.apis;
+  renderApis(filtered);
 }
 
 function dlist(id,items){
@@ -1002,12 +1096,1438 @@ function savePagesCsv(){
 }
 function copyKey(k){
   if(!S.report)return toast('No data',true);
-  const list=S.report[k]||[];
+  let list=S.report[k]||[];
+  // For api_endpoints, expand bare paths to full URLs
+  if(k==='api_endpoints' && S.report.target){
+    try{
+      const origin=new URL(S.report.target).origin;
+      list=list.map(e=>e.startsWith('/')? origin+e : e);
+    }catch{}
+  }
   navigator.clipboard.writeText(list.join('\n')).then(()=>toast(`Copied ${list.length} items`));
 }
 function saveKey(k,name){
   if(!S.report)return toast('No data',true);
-  const list=S.report[k]||[];
+  let list=S.report[k]||[];
+  if(k==='api_endpoints' && S.report.target){
+    try{const origin=new URL(S.report.target).origin;list=list.map(e=>e.startsWith('/')?origin+e:e);}catch{}
+  }
+  dl(list.join('\n'),name);toast(`Saved ${list.length} items`);
+}
+
+/* ── Log / status ──────────────────────── */
+function log(type,msg){
+  const box=$('logBox');
+  const d=document.createElement('div');
+  d.className='le'+(type?' '+type:'');
+  d.textContent=`[${new Date().toISOString().substring(11,23)}] ${msg}`;
+  box.appendChild(d);box.scrollTop=box.scrollHeight;
+}
+function setStatus(msg){$('statusLbl').textContent=msg;$('progLbl').textContent=msg}
+
+/* ── Init ──────────────────────────────── */
+renderKvs();renderTags();updateCli();
+</script>
+</body>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CREEPER v3 — Bug Hunt Recon</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:    #050a0f; --bg2: #080f18; --bg3: #0c1825;
+  --panel: #0a141f; --border: #1a3a5c; --border2: #0f2540;
+  --cyan:  #00d4ff; --purple: #c678dd; --green: #39ff14;
+  --red:   #ff3b5c; --yellow: #ffb347; --orange: #ff6b35;
+  --text:  #c8d8e8; --dim: #4a6a8a; --bright: #e8f4ff;
+  --glow-c: 0 0 20px rgba(0,212,255,.3);
+  --glow-g: 0 0 20px rgba(57,255,20,.25);
+  --glow-r: 0 0 20px rgba(255,59,92,.3);
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+html{height:100%;overflow:hidden}
+body{
+  height:100%; margin:0;
+  background:var(--bg); color:var(--text);
+  font-family:'Rajdhani',sans-serif; font-size:15px;
+  overflow:hidden;
+}
+body::before{
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background-image:
+    linear-gradient(rgba(0,212,255,.025) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(0,212,255,.025) 1px,transparent 1px);
+  background-size:44px 44px;
+}
+body::after{
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:1;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.04) 2px,rgba(0,0,0,.04) 4px);
+}
+
+/* ── Layout ───────────────────────────────────── */
+.wrap{position:relative;z-index:2;display:flex;height:100vh;width:100%;overflow:hidden}
+.left{
+  width:440px; min-width:0; max-width:500px; flex-shrink:0;
+  border-right:2px solid var(--border);
+  background:rgba(5,10,15,.92);
+  backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  display:flex; flex-direction:column;
+  height:100vh; min-height:0; overflow:hidden;
+}
+.left-scroll{
+  flex:1 1 0%;
+  overflow-y:auto; overflow-x:hidden;
+  padding:16px 18px 24px;
+  min-height:0;
+}
+.left-scroll > *{margin-bottom:12px}
+.left-scroll > *:last-child{margin-bottom:0}
+.left-footer{
+  padding:14px 18px; border-top:1px solid var(--border2);
+  background:rgba(8,15,24,.95); flex-shrink:0; z-index:10;
+}
+.right{
+  flex:1 1 0%; min-width:0; min-height:0;
+  overflow:hidden; display:flex; flex-direction:column; padding:16px 20px;
+}
+
+/* ── Responsive ──────────────────────────────── */
+@media (max-width: 960px) {
+  .wrap{flex-direction:column;height:auto;min-height:100vh}
+  .left{
+    width:100%; max-width:100%; height:auto; max-height:55vh;
+    border-right:none; border-bottom:2px solid var(--border);
+  }
+  .left-scroll{max-height:calc(55vh - 100px)}
+  .right{height:45vh; min-height:300px}
+}
+@media (max-width: 600px) {
+  .left{max-height:60vh}
+  .left-scroll{max-height:calc(60vh - 90px);padding:12px 14px 18px}
+  .right{padding:10px 12px}
+  .hdr h1{font-size:16px;letter-spacing:2px}
+  .g4{grid-template-columns:1fr 1fr;gap:8px}
+  .stats{grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:5px}
+}
+
+/* scrollbar */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--cyan)}
+.left-scroll{scroll-behavior:smooth}
+
+/* ── Header ───────────────────────────────────── */
+.hdr{
+  display:flex;align-items:center;gap:12px;
+  padding:14px 18px 12px;
+  border-bottom:1px solid var(--border2);
+  flex-shrink:0;
+}
+.hdr svg{width:42px;height:42px;flex-shrink:0}
+.hdr h1{
+  font-family:'Orbitron',monospace;font-size:22px;font-weight:900;letter-spacing:4px;
+  background:linear-gradient(90deg,var(--cyan),var(--purple));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.hdr p{color:var(--dim);font-size:10px;letter-spacing:2px;text-transform:uppercase;margin-top:2px}
+.ver{
+  margin-left:auto;font-family:'Share Tech Mono',monospace;font-size:9px;
+  color:var(--green);border:1px solid rgba(57,255,20,.3);padding:3px 7px;
+  border-radius:3px;background:rgba(57,255,20,.04);letter-spacing:1px;white-space:nowrap;flex-shrink:0;
+}
+
+/* ── Panel card ───────────────────────────────── */
+.card{
+  background:var(--panel);border:1px solid var(--border);
+  border-radius:6px;padding:14px 16px;position:relative;overflow:hidden;
+  flex-shrink:0; /* ← prevent cards from squishing inside flex scroll */
+}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--cyan),transparent)}
+.card.red::before{background:linear-gradient(90deg,var(--red),transparent)}
+.card.purple::before{background:linear-gradient(90deg,var(--purple),transparent)}
+.card.green::before{background:linear-gradient(90deg,var(--green),transparent)}
+.card-title{
+  font-family:'Orbitron',monospace;font-size:9px;letter-spacing:3px;
+  text-transform:uppercase;color:var(--cyan);margin-bottom:12px;
+  display:flex;align-items:center;gap:7px;
+}
+.card.red    .card-title{color:var(--red)}
+.card.purple .card-title{color:var(--purple)}
+.card.green  .card-title{color:var(--green)}
+.cdot{width:5px;height:5px;border-radius:50%;background:var(--cyan);box-shadow:0 0 6px var(--cyan);flex-shrink:0}
+.card.red    .cdot{background:var(--red);box-shadow:0 0 6px var(--red)}
+.card.purple .cdot{background:var(--purple);box-shadow:0 0 6px var(--purple)}
+.card.green  .cdot{background:var(--green);box-shadow:0 0 6px var(--green)}
+
+/* ── Form elements ────────────────────────────── */
+.field{margin-bottom:10px}
+.field:last-child{margin-bottom:0}
+label{display:block;font-size:10px;letter-spacing:1.5px;color:var(--dim);text-transform:uppercase;margin-bottom:4px}
+input[type=text],input[type=number],textarea,select{
+  width:100%;background:var(--bg2);border:1px solid var(--border);
+  color:var(--bright);font-family:'Share Tech Mono',monospace;font-size:12px;
+  padding:7px 10px;border-radius:4px;outline:none;transition:border-color .15s,box-shadow .15s;
+}
+input:focus,textarea:focus,select:focus{border-color:var(--cyan);box-shadow:0 0 0 2px rgba(0,212,255,.1)}
+input::placeholder,textarea::placeholder{color:var(--dim);opacity:.5}
+textarea{resize:vertical;min-height:60px;line-height:1.6}
+select option{background:var(--bg2)}
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button{opacity:0;pointer-events:none}
+input[type=number]{-moz-appearance:textfield;appearance:textfield}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+
+/* ── Toggles ──────────────────────────────────── */
+.trow{display:flex;flex-wrap:wrap;gap:8px}
+.tog{display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
+.tog input{display:none}
+.tbox{
+  width:30px;height:16px;border-radius:8px;
+  background:var(--bg2);border:1px solid var(--border);position:relative;transition:.15s;
+}
+.tbox::after{
+  content:'';position:absolute;left:2px;top:2px;
+  width:10px;height:10px;border-radius:50%;background:var(--dim);transition:.15s;
+}
+.tog input:checked+.tbox{background:rgba(0,212,255,.12);border-color:var(--cyan)}
+.tog input:checked+.tbox::after{left:16px;background:var(--cyan);box-shadow:0 0 5px var(--cyan)}
+.tog-lbl{font-size:12px;color:var(--text)}
+
+/* ── Regex tag area ───────────────────────────── */
+.regex-area{
+  min-height:42px;background:var(--bg2);border:1px solid var(--border);
+  border-radius:4px;padding:6px 8px;display:flex;flex-wrap:wrap;
+  gap:4px;align-items:center;cursor:text;transition:.15s;
+}
+.regex-area:focus-within{border-color:var(--purple);box-shadow:0 0 0 2px rgba(198,120,221,.1)}
+.rtag{
+  display:inline-flex;align-items:center;gap:4px;
+  background:rgba(198,120,221,.1);border:1px solid rgba(198,120,221,.3);
+  color:var(--purple);font-family:'Share Tech Mono',monospace;
+  font-size:10px;padding:2px 6px;border-radius:3px;white-space:nowrap;
+}
+.rtag.bad{background:rgba(255,59,92,.1);border-color:rgba(255,59,92,.3);color:var(--red)}
+.rx{cursor:pointer;opacity:.6;font-size:12px;line-height:1;transition:.1s}
+.rx:hover{opacity:1}
+.ri{
+  flex:1;min-width:120px;background:transparent;border:none;
+  color:var(--bright);font-family:'Share Tech Mono',monospace;font-size:11px;
+  outline:none;padding:2px 2px;
+}
+.hint{font-size:10px;color:var(--dim);margin-top:4px}
+
+/* ── Presets ──────────────────────────────────── */
+.psep{
+  font-family:'Orbitron',monospace;font-size:8px;letter-spacing:2px;
+  color:var(--dim);text-transform:uppercase;margin:10px 0 5px;
+  display:flex;align-items:center;gap:6px;
+}
+.psep::after{content:'';flex:1;height:1px;background:var(--border2)}
+.prow{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px}
+.pb{
+  font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim);
+  border:1px solid var(--border);background:transparent;
+  padding:2px 8px;border-radius:3px;cursor:pointer;transition:.12s;
+}
+.pb:hover{color:var(--purple);border-color:var(--purple);background:rgba(198,120,221,.06)}
+.pb.clr{color:var(--red);border-color:rgba(255,59,92,.3)}
+.pb.clr:hover{background:rgba(255,59,92,.08)}
+
+/* ── KV header rows ───────────────────────────── */
+.kvlist{display:flex;flex-direction:column;gap:5px}
+.kvrow{display:flex;gap:5px;align-items:center}
+.kvrow input{font-size:11px;padding:5px 8px}
+.kvrow input:first-child{flex:0 0 110px}
+.kvrow input:last-of-type{flex:1}
+.kv-add{
+  font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--green);
+  border:1px solid rgba(57,255,20,.3);background:transparent;
+  padding:3px 9px;border-radius:3px;cursor:pointer;margin-top:3px;transition:.12s;
+}
+.kv-add:hover{background:rgba(57,255,20,.08)}
+.kvdel{
+  background:transparent;border:none;color:var(--dim);
+  font-size:15px;cursor:pointer;flex-shrink:0;transition:.12s;padding:0 1px;line-height:1;
+}
+.kvdel:hover{color:var(--red)}
+
+/* ── CLI box ──────────────────────────────────── */
+.cli{
+  background:#020509;border:1px solid var(--border2);border-radius:4px;
+  padding:8px 10px;font-family:'Share Tech Mono',monospace;
+  font-size:10px;color:var(--green);max-height:56px;
+  overflow-y:auto;line-height:1.7;white-space:pre-wrap;word-break:break-all;
+}
+
+/* ── Buttons ──────────────────────────────────── */
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:9px 18px;border-radius:4px;border:none;cursor:pointer;
+  font-family:'Orbitron',monospace;font-size:10px;letter-spacing:2px;
+  font-weight:700;text-transform:uppercase;transition:.15s;
+}
+.btn-start{
+  background:linear-gradient(135deg,rgba(0,212,255,.14),rgba(0,212,255,.07));
+  color:var(--cyan);border:1px solid var(--cyan);box-shadow:var(--glow-c);
+}
+.btn-start:hover:not(:disabled){background:rgba(0,212,255,.22);transform:translateY(-1px);box-shadow:0 0 28px rgba(0,212,255,.5)}
+.btn-start:disabled{opacity:.35;cursor:not-allowed}
+.btn-stop{background:rgba(255,59,92,.1);color:var(--red);border:1px solid var(--red)}
+.btn-stop:hover{background:rgba(255,59,92,.2)}
+.btn-sm{padding:5px 12px;font-size:9px}
+.btn-copy{background:rgba(198,120,221,.07);color:var(--purple);border:1px solid rgba(198,120,221,.3)}
+.btn-copy:hover{background:rgba(198,120,221,.14)}
+.btn-save{background:linear-gradient(135deg,rgba(57,255,20,.09),rgba(57,255,20,.04));color:var(--green);border:1px solid var(--green)}
+.btn-save:hover{background:rgba(57,255,20,.16)}
+.arow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+
+/* ── Progress ─────────────────────────────────── */
+.prog-outer{height:2px;background:var(--bg2);border-radius:1px;overflow:hidden;margin:8px 0 4px}
+.prog-inner{height:100%;width:0%;border-radius:1px;background:linear-gradient(90deg,var(--cyan),var(--purple));transition:width .3s;box-shadow:0 0 6px rgba(0,212,255,.5)}
+.prog-lbl{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim)}
+
+/* ── RIGHT: stats row ─────────────────────────── */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin-bottom:14px;flex-shrink:0}
+.sc{background:var(--bg2);border:1px solid var(--border2);border-radius:5px;padding:8px 10px;text-align:center}
+.sc.hit{border-color:rgba(57,255,20,.4);background:rgba(57,255,20,.04);box-shadow:0 0 10px rgba(57,255,20,.08)}
+.sc.wrn{border-color:rgba(255,59,92,.35);background:rgba(255,59,92,.04)}
+.sv{font-family:'Orbitron',monospace;font-size:18px;font-weight:700;color:var(--cyan)}
+.sc.hit .sv{color:var(--green)}
+.sc.wrn .sv{color:var(--red)}
+.sl{font-size:9px;letter-spacing:1.5px;color:var(--dim);text-transform:uppercase;margin-top:2px}
+
+/* ── Tabs ─────────────────────────────────────── */
+.tabs{display:flex;border-bottom:1px solid var(--border);gap:0;overflow-x:auto;flex-shrink:0}
+.tab{
+  font-family:'Orbitron',monospace;font-size:8.5px;letter-spacing:2px;
+  text-transform:uppercase;padding:8px 12px;cursor:pointer;
+  color:var(--dim);border-bottom:2px solid transparent;
+  white-space:nowrap;transition:.12s;user-select:none;
+}
+.tab:hover{color:var(--text)}
+.tab.on{color:var(--cyan);border-bottom-color:var(--cyan)}
+.tab.on.g{color:var(--green);border-bottom-color:var(--green)}
+.tab.on.r{color:var(--red);border-bottom-color:var(--red)}
+.tct{
+  display:inline-block;background:rgba(0,212,255,.1);color:var(--cyan);
+  font-size:8px;padding:0 4px;border-radius:7px;margin-left:2px;
+}
+.tab.on.g .tct{background:rgba(57,255,20,.1);color:var(--green)}
+.tab.on.r .tct{background:rgba(255,59,92,.1);color:var(--red)}
+.pane{display:none;height:100%;overflow-y:auto;padding-top:12px}
+.pane.on{display:block}
+
+/* ── Pane header ──────────────────────────────── */
+.ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px;flex-shrink:0}
+.pt{font-family:'Orbitron',monospace;font-size:10px;letter-spacing:2px;color:var(--green)}
+.pt.c{color:var(--cyan)}
+.pt.r{color:var(--red)}
+.pacts{display:flex;gap:5px;flex-wrap:wrap}
+
+/* ── Regex hit rows ───────────────────────────── */
+.hrow{
+  background:var(--bg2);border:1px solid rgba(57,255,20,.15);
+  border-radius:5px;padding:11px 13px;margin-bottom:8px;transition:.15s;
+}
+.hrow:hover{border-color:rgba(57,255,20,.4)}
+.hurl{
+  font-family:'Share Tech Mono',monospace;font-size:11px;
+  color:var(--cyan);word-break:break-all;margin-bottom:4px;
+  display:flex;align-items:flex-start;gap:6px;
+}
+.hurl a{color:var(--cyan);text-decoration:none}
+.hurl a:hover{text-decoration:underline;color:#80eeff}
+.htitle{font-size:11px;color:var(--text);margin-bottom:6px;opacity:0.9}
+.hpats{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
+.hptag{
+  font-family:'Share Tech Mono',monospace;font-size:9px;
+  background:rgba(198,120,221,.08);border:1px solid rgba(198,120,221,.28);
+  color:var(--purple);padding:1px 6px;border-radius:3px;
+}
+.hmatch{
+  font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--green);
+  background:rgba(57,255,20,.04);border-left:2px solid rgba(57,255,20,.35);
+  padding:3px 8px;margin:2px 0;border-radius:0 3px 3px 0;word-break:break-all;
+}
+.hctx{font-size:11px;color:var(--text);margin-top:2px;padding-left:10px;opacity:0.85;word-break:break-all}
+.hct{
+  font-family:'Share Tech Mono',monospace;font-size:8px;
+  background:rgba(57,255,20,.07);border:1px solid rgba(57,255,20,.2);
+  color:var(--green);padding:0 4px;border-radius:7px;flex-shrink:0;
+}
+
+/* ── Pattern summary bar ──────────────────────── */
+.psumbar{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px}
+.psum{
+  display:flex;align-items:center;gap:4px;
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:4px;padding:4px 8px;
+  font-family:'Share Tech Mono',monospace;font-size:10px;
+}
+.pn{color:var(--purple)} .pc{color:var(--green);font-weight:700}
+
+/* ── Data list ────────────────────────────────── */
+.dlist{font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text);line-height:1.9;overflow-y:auto}
+.di{display:flex;align-items:flex-start;gap:6px;padding:2px 0;border-bottom:1px solid rgba(26,58,92,.25)}
+.di-ic{color:var(--dim);flex-shrink:0}
+.di-tx{word-break:break-all;flex:1}
+.di-tx a{color:var(--cyan);text-decoration:none}
+.di-tx a:hover{text-decoration:underline}
+.di-bd{font-size:8px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.16);color:var(--cyan);padding:0 4px;border-radius:3px;flex-shrink:0}
+
+/* ── Form cards ───────────────────────────────── */
+.fcard{background:var(--bg2);border:1px solid var(--border2);border-radius:5px;padding:10px 13px;margin-bottom:7px}
+.fcard.bad{border-color:rgba(255,59,92,.28)}
+.ftop{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:5px}
+.fmeth{font-family:'Share Tech Mono',monospace;font-size:10px;background:rgba(0,212,255,.07);border:1px solid rgba(0,212,255,.18);color:var(--cyan);padding:1px 6px;border-radius:3px}
+.faction{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text);word-break:break-all;flex:1}
+.fflags{display:flex;gap:4px;flex-wrap:wrap}
+.ff{font-family:'Share Tech Mono',monospace;font-size:9px;padding:1px 5px;border-radius:3px;border:1px solid}
+.ff-p{color:var(--red);border-color:rgba(255,59,92,.35);background:rgba(255,59,92,.07)}
+.ff-f{color:var(--yellow);border-color:rgba(255,179,71,.35);background:rgba(255,179,71,.07)}
+.ff-nc{color:var(--red);border-color:rgba(255,59,92,.35);background:rgba(255,59,92,.07)}
+.ff-ok{color:var(--green);border-color:rgba(57,255,20,.28);background:rgba(57,255,20,.05)}
+.ffield{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim);margin-top:3px}
+.fhid{color:var(--yellow);margin-top:2px}
+
+/* ── Tech grid ────────────────────────────────── */
+.tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:7px;margin-bottom:10px}
+.tc{background:var(--bg2);border:1px solid var(--border2);border-radius:4px;padding:8px 10px}
+.tclbl{font-size:8px;letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin-bottom:2px}
+.tcval{font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--green);word-break:break-all}
+.tcval.e{color:var(--dim);opacity:0.7}
+
+/* ── Log ──────────────────────────────────────── */
+.logbox{
+  background:#020509;border:1px solid var(--border2);border-radius:4px;
+  padding:8px 10px;font-family:'Share Tech Mono',monospace;
+  font-size:10px;max-height:450px;overflow-y:auto;line-height:1.8;
+}
+.le{color:var(--dim)}
+.le.i{color:var(--cyan)} .le.w{color:var(--yellow)}
+.le.e{color:var(--red)} .le.h{color:var(--green);font-weight:bold} .le.ok{color:var(--green)}
+
+/* ── Empty state ──────────────────────────────── */
+.empty{text-align:center;padding:36px 16px;color:var(--dim)}
+.empty .big{font-size:28px;margin-bottom:8px}
+.empty p{font-size:11px;line-height:1.9}
+
+/* ── Toast ────────────────────────────────────── */
+.toast{
+  position:fixed;bottom:20px;right:20px;
+  background:var(--panel);border:1px solid var(--green);color:var(--green);
+  font-family:'Share Tech Mono',monospace;font-size:11px;
+  padding:8px 14px;border-radius:4px;box-shadow:0 0 16px rgba(57,255,20,.16);
+  z-index:999;opacity:0;transform:translateY(6px);
+  transition:opacity .18s,transform .18s;pointer-events:none;
+}
+.toast.on{opacity:1;transform:translateY(0)}
+
+/* ── Spinner ──────────────────────────────────── */
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{width:12px;height:12px;border:2px solid rgba(0,212,255,.18);border-top-color:var(--cyan);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ════════ LEFT ════════ -->
+<div class="left">
+  <div class="hdr">
+    <svg viewBox="0 0 42 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="21" cy="21" r="19" stroke="#00d4ff" stroke-width="1" stroke-dasharray="4 2" opacity=".4"/>
+      <circle cx="21" cy="21" r="12" stroke="#00d4ff" stroke-width=".8" opacity=".55"/>
+      <circle cx="21" cy="21" r="4" fill="#00d4ff" opacity=".9"/>
+      <line x1="21" y1="2"  x2="21" y2="8"  stroke="#00d4ff" stroke-width="1.4" opacity=".8"/>
+      <line x1="21" y1="34" x2="21" y2="40" stroke="#00d4ff" stroke-width="1.4" opacity=".8"/>
+      <line x1="2"  y1="21" x2="8"  y2="21" stroke="#00d4ff" stroke-width="1.4" opacity=".8"/>
+      <line x1="34" y1="21" x2="40" y2="21" stroke="#00d4ff" stroke-width="1.4" opacity=".8"/>
+      <circle cx="21" cy="21" r="7" stroke="#c678dd" stroke-width=".6" stroke-dasharray="2 2" opacity=".6"/>
+    </svg>
+    <div>
+      <h1>CREEPER</h1>
+      <p>Bug Hunt Recon · Stealth Crawler</p>
+    </div>
+    <div style="margin-left:auto; display:flex; gap:10px;">
+      <a href="map.html" class="btn btn-copy" style="padding:6px 12px; font-size:10px; border-color:var(--cyan); color:var(--cyan); background:rgba(0,212,255,0.07)">Map View</a>
+      <div class="ver" style="margin-left:0">v3 · MOD</div>
+    </div>
+  </div>
+
+  <div class="left-scroll">
+
+    <!-- Target -->
+    <div class="card">
+      <div class="card-title"><span class="cdot"></span>Target</div>
+      <div class="field"><label>URL</label><input type="text" id="iUrl" placeholder="https://target.com"/></div>
+      <div class="g4">
+        <div class="field"><label>Depth</label><input type="number" id="iDepth" value="2" min="1" max="10"/></div>
+        <div class="field"><label>Pages</label><input type="number" id="iPages" value="50" min="1" max="5000"/></div>
+        <div class="field"><label>Workers</label><input type="number" id="iConc" value="5" min="1" max="20"/></div>
+        <div class="field"><label>Timeout</label><input type="number" id="iTimeout" value="20" min="5" max="120"/></div>
+      </div>
+      <div class="g2">
+        <div class="field"><label>Delay Min (s)</label><input type="number" id="iDMin" value="1.0" min="0" step="0.1"/></div>
+        <div class="field"><label>Delay Max (s)</label><input type="number" id="iDMax" value="3.0" min="0" step="0.1"/></div>
+      </div>
+      <div class="field"><label>Options</label>
+        <div class="trow">
+          <label class="tog"><input type="checkbox" id="oJs"><span class="tbox"></span><span class="tog-lbl">JS Render</span></label>
+          <label class="tog"><input type="checkbox" id="oRobots" checked><span class="tbox"></span><span class="tog-lbl">robots.txt</span></label>
+          <label class="tog"><input type="checkbox" id="oSsl" checked><span class="tbox"></span><span class="tog-lbl">Verify SSL</span></label>
+          <label class="tog"><input type="checkbox" id="oMo"><span class="tbox"></span><span class="tog-lbl">Match-Only</span></label>
+          <label class="tog"><input type="checkbox" id="oNinja"><span class="tbox" style="border-color:var(--orange)"></span><span class="tog-lbl" style="color:var(--orange)">Ninja Mode</span></label>
+        </div>
+      </div>
+      <div class="field"><label>Proxies <span style="color:var(--dim);font-size:8px">(One per line)</span></label>
+        <textarea id="iProxies" placeholder="http://user:pass@1.2.3.4:8080..." style="min-height:40px"></textarea>
+      </div>
+      <div class="field"><label>Export</label>
+        <div class="trow">
+          <label class="tog"><input type="checkbox" id="eJson" checked><span class="tbox"></span><span class="tog-lbl">JSON</span></label>
+          <label class="tog"><input type="checkbox" id="eCsv"><span class="tbox"></span><span class="tog-lbl">CSV</span></label>
+          <label class="tog"><input type="checkbox" id="eSql"><span class="tbox"></span><span class="tog-lbl">SQLite</span></label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Auth headers -->
+    <div class="card green">
+      <div class="card-title"><span class="cdot"></span>Auth Headers <span style="color:var(--dim);font-size:8px;margin-left:4px;letter-spacing:1px">COOKIE · TOKEN · API KEY</span></div>
+      <div class="kvlist" id="kvList"></div>
+      <button class="kv-add" onclick="addKv()">+ Add Header</button>
+    </div>
+
+    <!-- Regex engine -->
+    <div class="card purple">
+      <div class="card-title"><span class="cdot"></span>Regex Pattern Engine</div>
+      <div class="field">
+        <label>Patterns <span style="color:var(--dim);font-size:8px">(Enter or comma to add)</span></label>
+        <div class="regex-area" id="rxa" onclick="document.getElementById('ri').focus()">
+          <input type="text" id="ri" class="ri" placeholder="api_key\s*=  or  /admin  or  JWT …"/>
+        </div>
+        <div class="hint">Pages matching ANY pattern → collected. Full Python <code style="color:var(--purple)">re</code> syntax.</div>
+      </div>
+
+      <div class="psep">Secrets &amp; Keys</div>
+      <div class="prow">
+        <button class="pb" onclick="ap(['api_key\\s*=','secret\\s*=','password\\s*=','token\\s*=','access_token\\s*=','AKIA[0-9A-Z]{16}'])">API Keys</button>
+        <button class="pb" onclick="ap(['eyJ[a-zA-Z0-9\\-_]+\\.[a-zA-Z0-9\\-_]+'])">JWT</button>
+        <button class="pb" onclick="ap(['ghp_[0-9A-Za-z]{36}','AIza[0-9A-Za-z\\-_]{35}','sk-[a-zA-Z0-9]{20,}'])">Cloud Keys</button>
+        <button class="pb" onclick="ap(['BEGIN (RSA|EC|OPENSSH) PRIVATE KEY'])">Private Keys</button>
+      </div>
+
+      <div class="psep">Attack Surface</div>
+      <div class="prow">
+        <button class="pb" onclick="ap(['/admin','/login','/dashboard','/wp-admin','/wp-login\\.php','/phpmyadmin','/cpanel'])">Admin Paths</button>
+        <button class="pb" onclick="ap(['/api/v\\d','/graphql','/rest/','/rpc','/webhook','/internal'])">API Routes</button>
+        <button class="pb" onclick="ap(['enctype=[&quot;\\\']multipart','type=[&quot;\\\']file'])">File Uploads</button>
+        <button class="pb" onclick="ap(['debug=true','debug=1','FLASK_DEBUG','NODE_ENV=development','APP_ENV=local'])">Debug Flags</button>
+      </div>
+
+      <div class="psep">Leaks &amp; Errors</div>
+      <div class="prow">
+        <button class="pb" onclick="ap(['sourceMappingURL','\\.map&quot;'])">Source Maps</button>
+        <button class="pb" onclick="ap(['SELECT .* FROM','UNION SELECT','ORA-\\d{5}','Warning: mysql'])">SQL Errors</button>
+        <button class="pb" onclick="ap(['Exception','stack trace','Traceback','Fatal error'])">Stack Traces</button>
+        <button class="pb" onclick="ap(['\\.env','config\\.php','web\\.config','database\\.yml','\\.htaccess'])">Config Files</button>
+        <button class="pb" onclick="ap(['csrfmiddlewaretoken','authenticity_token','__VIEWSTATE'])">CSRF Tokens</button>
+      </div>
+
+      <div class="prow" style="margin-top:6px">
+        <button class="pb clr" onclick="clrPats()">✕ Clear All</button>
+      </div>
+    </div>
+
+    <!-- CLI preview -->
+    <div class="card">
+      <div class="card-title"><span class="cdot"></span>CLI Command</div>
+      <div class="cli" id="cliPrev"></div>
+    </div>
+
+  </div><!-- /left-scroll -->
+
+  <!-- Actions (Pinned to bottom) -->
+  <div class="left-footer">
+    <div class="arow" style="margin-bottom:8px">
+      <button class="btn btn-start" id="startBtn" onclick="startScan()"><span>▶</span> Start Crawl</button>
+      <button class="btn btn-stop btn-sm hidden" id="stopBtn" onclick="stopScan()">■ Stop</button>
+      <span id="statusLbl" style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim)"></span>
+    </div>
+    <div class="prog-outer"><div class="prog-inner" id="progBar"></div></div>
+    <div class="prog-lbl" id="progLbl">Ready</div>
+  </div>
+
+</div><!-- /left -->
+
+<!-- ════════ RIGHT ════════ -->
+<div class="right">
+  <div class="stats" id="statsRow"></div>
+
+  <div class="tabs" id="tabBar">
+    <div class="tab on g" data-t="regex"   id="tabRegex">Regex Hits <span class="tct" id="tcR">0</span></div>
+    <div class="tab r"    data-t="forms"   id="tabForms">Forms <span class="tct" id="tcF">0</span></div>
+    <div class="tab"      data-t="secrets" id="tabSecrets">JS Secrets <span class="tct" id="tcS">0</span></div>
+    <div class="tab"      data-t="apis"    id="tabApis">API Routes <span class="tct" id="tcA">0</span></div>
+    <div class="tab"      data-t="emails"  id="tabEmails">Emails <span class="tct" id="tcE">0</span></div>
+    <div class="tab"      data-t="phones"  id="tabPhones">Phones <span class="tct" id="tcPh">0</span></div>
+    <div class="tab"      data-t="subs"    id="tabSubs">Subdomains <span class="tct" id="tcSb">0</span></div>
+    <div class="tab"      data-t="pages"   id="tabPages">Pages <span class="tct" id="tcPg">0</span></div>
+    <div class="tab"      data-t="tech"    id="tabTech">Tech</div>
+    <div class="tab"      data-t="jsfiles"  id="tabJS">JS Files <span class="tct" id="tcJS">0</span></div>
+    <div class="tab"      data-t="params"   id="tabParams">Parameters <span class="tct" id="tcPar">0</span></div>
+    <div class="tab"      data-t="sourcemaps" id="tabSM">Source Maps <span class="tct" id="tcSM">0</span></div>
+    <div class="tab"      data-t="exposure" id="tabExposure">Exposure <span class="tct" id="tcExp">0</span></div>
+    <div class="tab"      data-t="log"     id="tabLog">Log</div>
+  </div>
+
+  <div style="flex:1;overflow:hidden;position:relative">
+
+    <div class="pane on" id="pRegex">
+      <div class="ph">
+        <div class="pt">Matched URLs</div>
+        <div class="pacts">
+          <button class="btn btn-copy btn-sm" onclick="copyHitUrls()">Copy URLs</button>
+          <button class="btn btn-save btn-sm" onclick="saveHitUrls()">Save .txt</button>
+          <button class="btn btn-save btn-sm" onclick="saveReport()">Full JSON</button>
+        </div>
+      </div>
+      <div class="psumbar" id="patSum"></div>
+      <div id="regexCont"></div>
+    </div>
+
+    <div class="pane" id="pForms">
+      <div class="ph">
+        <div class="pt r">Forms — Attack Surface</div>
+        <div class="pacts">
+          <button class="btn btn-save btn-sm" onclick="saveFormsCsv()">Save CSV</button>
+        </div>
+      </div>
+      <div id="formsCont"></div>
+    </div>
+
+    <div class="pane" id="pSecrets">
+      <div class="ph">
+        <div class="pt r">Sensitive JS Vars &amp; Secrets</div>
+        <div class="pacts">
+          <button class="btn btn-copy btn-sm" onclick="copyKey('js_sensitive_vars')">Copy</button>
+          <button class="btn btn-save btn-sm" onclick="saveKey('js_sensitive_vars','js_secrets.txt')">Save</button>
+        </div>
+      </div>
+      <div class="dlist" id="secretsCont"></div>
+    </div>
+
+    <div class="pane" id="pApis">
+      <div class="ph">
+        <div class="pt c">API / Internal Endpoints</div>
+        <div class="pacts">
+          <input type="text" id="apiFilter" placeholder="filter…" oninput="filterApis()" style="background:var(--bg2);border:1px solid var(--border);color:var(--bright);font-family:'Share Tech Mono',monospace;font-size:11px;padding:4px 8px;border-radius:3px;outline:none;width:130px;">
+          <button class="btn btn-copy btn-sm" onclick="copyKey('api_endpoints')">Copy All</button>
+          <button class="btn btn-save btn-sm" onclick="saveKey('api_endpoints','api_endpoints.txt')">Save</button>
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--dim);margin-bottom:8px;font-family:'Share Tech Mono',monospace" id="apiMeta"></div>
+      <div class="dlist" id="apisCont"></div>
+    </div>
+
+    <div class="pane" id="pEmails">
+      <div class="ph">
+        <div class="pt c">Emails Found</div>
+        <div class="pacts">
+          <button class="btn btn-copy btn-sm" onclick="copyKey('emails')">Copy</button>
+          <button class="btn btn-save btn-sm" onclick="saveKey('emails','emails.txt')">Save</button>
+        </div>
+      </div>
+      <div class="dlist" id="emailsCont"></div>
+    </div>
+
+    <div class="pane" id="pPhones">
+      <div class="ph"><div class="pt c">Phone Numbers</div></div>
+      <div class="dlist" id="phonesCont"></div>
+    </div>
+
+    <div class="pane" id="pSubs">
+      <div class="ph">
+        <div class="pt c">Subdomains Discovered</div>
+        <div class="pacts">
+          <button class="btn btn-copy btn-sm" onclick="copyKey('subdomains')">Copy</button>
+          <button class="btn btn-save btn-sm" onclick="saveKey('subdomains','subdomains.txt')">Save</button>
+        </div>
+      </div>
+      <div class="dlist" id="subsCont"></div>
+    </div>
+
+    <div class="pane" id="pPages">
+      <div class="ph">
+        <div class="pt c">Crawled Pages</div>
+        <div class="pacts">
+          <button class="btn btn-save btn-sm" onclick="savePagesCsv()">Save CSV</button>
+        </div>
+      </div>
+      <div class="dlist" id="pagesCont"></div>
+    </div>
+
+    <div class="pane" id="pJsfiles">
+      <div class="ph">
+        <div class="pt c">JavaScript Files Parsed</div>
+        <div class="pacts">
+          <button class="btn btn-copy btn-sm" onclick="copyJsUrls()">Copy URLs</button>
+          <button class="btn btn-save btn-sm" onclick="saveJsFindings()">Save .txt</button>
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--dim);margin-bottom:10px;font-family:'Share Tech Mono',monospace" id="jsMeta"></div>
+      <div id="jsFilesCont"></div>
+    </div>
+
+    <div class="pane" id="pParams">
+      <div class="ph">
+        <div class="pt c">URL Parameters &amp; Form Fields</div>
+        <div class="pacts">
+          <input type="text" id="paramFilter" placeholder="filter…" oninput="filterParams()" style="background:var(--bg2);border:1px solid var(--border);color:var(--bright);font-family:'Share Tech Mono',monospace;font-size:11px;padding:4px 8px;border-radius:3px;outline:none;width:120px;">
+          <button class="btn btn-copy btn-sm" onclick="copyParams()">Copy Names</button>
+          <button class="btn btn-save btn-sm" onclick="saveParams()">Save .txt</button>
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--dim);margin-bottom:10px;font-family:'Share Tech Mono',monospace" id="paramMeta"></div>
+      <div id="paramsCont"></div>
+    </div>
+
+    <div class="pane" id="pSourcemaps">
+      <div class="ph">
+        <div class="pt c">Source Maps Found</div>
+        <div class="pacts">
+          <button class="btn btn-copy btn-sm" onclick="copyKey('sourcemaps')">Copy URLs</button>
+          <button class="btn btn-save btn-sm" onclick="saveKey('sourcemaps','sourcemaps.txt')">Save .txt</button>
+        </div>
+      </div>
+      <div class="dlist" id="smCont"></div>
+    </div>
+
+    <div class="pane" id="pExposure">
+      <div class="ph">
+        <div class="pt r">Exposed Paths &amp; Files</div>
+        <div class="pacts">
+          <button class="btn btn-copy btn-sm" onclick="copyExposure()">Copy URLs</button>
+          <button class="btn btn-save btn-sm" onclick="saveExposure()">Save .txt</button>
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--dim);margin-bottom:10px;font-family:'Share Tech Mono',monospace" id="expMeta"></div>
+      <div id="exposureCont"></div>
+    </div>
+
+    <div class="pane" id="pTech">
+      <div class="ph"><div class="pt c">Technology Fingerprint</div></div>
+      <div id="techCont"></div>
+    </div>
+
+    <div class="pane" id="pLog">
+      <div class="ph">
+        <div class="pt c">Crawl Log</div>
+        <div class="pacts">
+          <button class="btn btn-copy btn-sm" onclick="document.getElementById('logBox').innerHTML=''">Clear</button>
+        </div>
+      </div>
+      <div class="logbox" id="logBox"></div>
+    </div>
+
+  </div>
+</div><!-- /right -->
+</div><!-- /wrap -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ── State ─────────────────────────────── */
+const S = { pats:[], kvs:[], scanning:false, aborted:false, report:null, apis:[], params:[] };
+
+/* ── Utils ─────────────────────────────── */
+const $ = id => document.getElementById(id);
+const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function validRx(p){try{new RegExp(p);return true}catch{return false}}
+let _tt=null;
+function toast(msg,err=false){
+  const t=$('toast');
+  t.textContent=msg;t.style.borderColor=err?'var(--red)':'var(--green)';
+  t.style.color=err?'var(--red)':'var(--green)';t.classList.add('on');
+  if(_tt)clearTimeout(_tt);_tt=setTimeout(()=>t.classList.remove('on'),2600);
+}
+function dl(text,name){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'text/plain'}));a.download=name;a.click();URL.revokeObjectURL(a.href)}
+
+/* ── Tabs ──────────────────────────────── */
+document.querySelectorAll('.tab').forEach(tab=>{
+  tab.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(t=>{t.classList.remove('on','g','r')});
+    document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
+    tab.classList.add('on');
+    const k=tab.dataset.t;
+    $('p'+k.charAt(0).toUpperCase()+k.slice(1))?.classList.add('on');
+  });
+});
+
+/* ── Regex tags ────────────────────────── */
+const rxa=$('rxa'), ri=$('ri');
+function renderTags(){
+  rxa.querySelectorAll('.rtag').forEach(t=>t.remove());
+  S.pats.forEach((p,i)=>{
+    const ok=validRx(p);
+    const t=document.createElement('span');
+    t.className='rtag'+(ok?'':' bad');
+    t.innerHTML=`<span>${esc(p)}</span><span class="rx" onclick="rmp(${i})">×</span>`;
+    rxa.insertBefore(t,ri);
+  });updateCli();
+}
+function ap(list){list.forEach(p=>{p=p.trim();if(p&&!S.pats.includes(p))S.pats.push(p)});renderTags();toast(`Added ${list.length} preset(s)`)}
+function rmp(i){S.pats.splice(i,1);renderTags()}
+function clrPats(){S.pats=[];renderTags()}
+ri.addEventListener('keydown',e=>{
+  if(['Enter',',','Tab'].includes(e.key)){e.preventDefault();const v=ri.value.trim().replace(/,$/,'');if(v){if(!S.pats.includes(v))S.pats.push(v);ri.value='';renderTags()}}
+  else if(e.key==='Backspace'&&!ri.value&&S.pats.length){rmp(S.pats.length-1)}
+});
+ri.addEventListener('paste',e=>{
+  e.preventDefault();
+  const t=(e.clipboardData||window.clipboardData).getData('text');
+  t.split(/[\n,]+/).map(p=>p.trim()).filter(Boolean).forEach(p=>{if(!S.pats.includes(p))S.pats.push(p)});
+  ri.value='';renderTags();
+});
+
+/* ── KV rows ───────────────────────────── */
+function addKv(k='',v=''){S.kvs.push({id:Date.now(),k,v});renderKvs()}
+function delKv(id){S.kvs=S.kvs.filter(r=>r.id!==id);renderKvs()}
+function renderKvs(){
+  $('kvList').innerHTML=S.kvs.map(r=>`
+    <div class="kvrow">
+      <input type="text" placeholder="Header / Cookie" value="${esc(r.k)}" oninput="updKv(${r.id},'k',this.value)"/>
+      <input type="text" placeholder="value / token" value="${esc(r.v)}" oninput="updKv(${r.id},'v',this.value)"/>
+      <button class="kvdel" onclick="delKv(${r.id})">×</button>
+    </div>`).join('');updateCli();
+}
+function updKv(id,f,v){const r=S.kvs.find(x=>x.id===id);if(r){r[f]=v;updateCli()}}
+function buildHeaders(){const h={};S.kvs.forEach(r=>{if(r.k.trim())h[r.k.trim()]=r.v});return h}
+
+/* ── CLI preview ───────────────────────── */
+function updateCli(){
+  const url=$('iUrl').value.trim()||'<URL>';
+  let cmd=`python scrape_cli.py "${url}"`
+    +` -d ${$('iDepth').value} -p ${$('iPages').value} -c ${$('iConc').value}`
+    +` --delay-min ${$('iDMin').value} --delay-max ${$('iDMax').value} --timeout ${$('iTimeout').value}`;
+  if($('oJs').checked)     cmd+=' --js';
+  if(!$('oRobots').checked)cmd+=' --no-robots';
+  if(!$('oSsl').checked)   cmd+=' --no-ssl-verify';
+  if($('oMo').checked)     cmd+=' --match-only';
+  if($('oNinja').checked)  cmd+=' --ninja';
+  const proxies = $('iProxies').value.split('\\n').map(p=>p.trim()).filter(Boolean);
+  if(proxies.length) cmd+=` --proxies ${proxies.length}`;
+  const fmts=[];
+  if($('eJson').checked)fmts.push('json');
+  if($('eCsv').checked) fmts.push('csv');
+  if($('eSql').checked) fmts.push('sqlite');
+  if(fmts.length)cmd+=' --export '+fmts.join(' ');
+  S.kvs.filter(r=>r.k.trim()).forEach(r=>{cmd+=` --header "${esc(r.k)}=${esc(r.v)}"`});
+  if(S.pats.length)cmd+=' --regex '+S.pats.map(p=>`"${p.replace(/"/g,'\\"')}"`).join(' ');
+  $('cliPrev').textContent=cmd;
+}
+document.querySelectorAll('input,select').forEach(el=>{el.addEventListener('change',updateCli);el.addEventListener('input',updateCli)});
+
+/* ── Scan ──────────────────────────────── */
+let _simInt=null;
+
+function startScan(){
+  const url=$('iUrl').value.trim();
+  if(!url){toast('Enter a target URL',true);return}
+  S.scanning=true;S.aborted=false;S.report=null;S.apis=[];
+  $('startBtn').disabled=true;$('stopBtn').classList.remove('hidden');
+  ['regexCont','formsCont','secretsCont','apisCont','emailsCont','phonesCont',
+   'subsCont','pagesCont','techCont','statsRow','patSum'].forEach(id=>{const e=$(id);if(e)e.innerHTML=''});
+  $('logBox').innerHTML='';
+  setStatus('Connecting…');
+  log('i',`Target: ${url}`);
+  log('i',`depth:${$('iDepth').value} pages:${$('iPages').value} workers:${$('iConc').value}`);
+  if(S.pats.length)log('i',`Patterns (${S.pats.length}): ${S.pats.join(' | ')}`);
+  else log('w','No regex patterns — all pages will be collected');
+
+  const cfg={
+    url,max_depth:+$('iDepth').value,max_pages:+$('iPages').value,
+    concurrency:+$('iConc').value,delay_min:+$('iDMin').value,delay_max:+$('iDMax').value,
+    timeout:+$('iTimeout').value,use_js:$('oJs').checked,
+    respect_robots:$('oRobots').checked,verify_ssl:$('oSsl').checked,
+    match_only:$('oMo').checked,regex_patterns:[...S.pats],
+    ninja_mode:$('oNinja').checked, proxies:$('iProxies').value.split('\\n').map(p=>p.trim()).filter(Boolean),
+    export_formats:[...([$('eJson').checked&&'json',$('eCsv').checked&&'csv',$('eSql').checked&&'sqlite'].filter(Boolean))],
+    custom_headers:buildHeaders()
+  };
+  fetch('/api/scrape',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)})
+    .then(r=>{if(!r.ok)throw new Error('no backend');return r.json()})
+    .then(r=>finalise(r))
+    .catch(()=>runDemo(url,cfg));
+}
+
+function stopScan(){
+  S.aborted=true;
+  if(_simInt){clearInterval(_simInt);_simInt=null}
+  setStatus('⏹ Stopped');
+  $('startBtn').disabled=false;$('stopBtn').classList.add('hidden');
+  log('w','Stopped by user.');
+}
+
+/* ── Demo / simulation ─────────────────── */
+function runDemo(url,cfg){
+  log('w','[DEMO] No backend detected — showing simulated output.');
+  let domain='target.com';try{domain=new URL(url).hostname}catch{}
+  const maxPg=Math.min(cfg.max_pages,20);
+  const routes=['/','/about','/login','/admin','/dashboard','/api/v1/users',
+    '/api/v2/keys','/graphql','/internal','/config.php','/.env',
+    '/wp-admin','/phpmyadmin','/upload','/debug','/settings',
+    '/api/v1/tokens','/api/v2/admin'];
+  const report={
+    target:url,scraped_at:new Date().toISOString(),total_pages:maxPg,
+    avg_response_time_ms:0,waf_signals_detected:0,
+    regex_patterns_used:[...S.pats],regex_pattern_errors:[],
+    regex_matched_urls:[],regex_total_hits:0,regex_pattern_hit_count:{},
+    emails:[`admin@${domain}`,`security@${domain}`,`noreply@${domain}`],
+    phones:['15551234567','14089876543'],
+    forms:[
+      {action:`https://${domain}/login`,method:'POST',enctype:'',id:'loginForm',name:'login',
+       input_count:3,has_password:true,has_file_upload:false,has_hidden:true,has_csrf_token:false,
+       inputs:[{name:'username',type:'text'},{name:'password',type:'password'},{name:'_token',type:'hidden',value:'abc123'}]},
+      {action:`https://${domain}/upload`,method:'POST',enctype:'multipart/form-data',id:'upForm',name:'',
+       input_count:2,has_password:false,has_file_upload:true,has_hidden:false,has_csrf_token:true,
+       inputs:[{name:'file',type:'file'},{name:'csrf_token',type:'hidden',value:''}]},
+      {action:`https://${domain}/search`,method:'GET',enctype:'',id:'',name:'',
+       input_count:1,has_password:false,has_file_upload:false,has_hidden:false,has_csrf_token:false,
+       inputs:[{name:'q',type:'text'}]},
+    ],
+    forms_with_password:[],forms_with_upload:[],forms_without_csrf:[],
+    comments:['<!-- TODO: remove /debug before prod -->','<!-- API_KEY=demo-key-here -->'],
+    subdomains:[`api.${domain}`,`dev.${domain}`,`staging.${domain}`,`mail.${domain}`],
+    api_endpoints:[url+'/api/v1/users',url+'/api/v2/tokens',url+'/graphql',url+'/internal/health',url+'/api/v1/keys'],
+    js_sensitive_vars:[`apiKey=sk-demokey1234567890`,`[SECRET] AKIA1234567890EXAMPLE`,`[SOURCEMAP] main.js.map`],
+    external_links:[],pages_by_status:{200:0},
+    tech:{server:'nginx/1.24.0',cms:'WordPress',waf:'Cloudflare',cdn:'Cloudflare',
+      powered_by:'PHP/8.1',frameworks:['WordPress','React'],
+      missing_security_headers:['content-security-policy','permissions-policy'],
+      security_headers:{'x-frame-options':'SAMEORIGIN','x-content-type-options':'nosniff'}},
+    pages:[],
+  };
+  report.forms_with_password=report.forms.filter(f=>f.has_password);
+  report.forms_with_upload=report.forms.filter(f=>f.has_file_upload);
+  report.forms_without_csrf=report.forms.filter(f=>!f.has_csrf_token);
+
+  let count=0,hits=0;
+  _simInt=setInterval(()=>{
+    if(S.aborted||count>=maxPg){
+      clearInterval(_simInt);_simInt=null;
+      if(!S.aborted){
+        report.total_pages=count;report.pages_by_status[200]=count;
+        report.avg_response_time_ms=Math.round(140+Math.random()*200);
+        report.regex_total_hits=hits;finalise(report);
+        $('startBtn').disabled=false;$('stopBtn').classList.add('hidden');
+        setStatus('✅ Demo complete');log('ok',`Done. ${count} pages, ${hits} regex hits.`);
+      }
+      return;
+    }
+    count++;
+    const path=routes[count%routes.length];
+    const purl=url.replace(/\/$/,'')+path;
+    const pct=Math.round((count/maxPg)*100);
+    $('progBar').style.width=pct+'%';$('progLbl').textContent=`[${pct}%] ${purl}`;
+    let mPats=[],mObjs=[];
+    S.pats.forEach(pat=>{
+      const isHit=/admin|api|key|secret|debug|config|upload|token|login|env/.test(path)||Math.random()<.13;
+      if(isHit){
+        mPats.push(pat);
+        report.regex_pattern_hit_count[pat]=(report.regex_pattern_hit_count[pat]||0)+1;
+        mObjs.push({pattern:pat,match_text:`[demo: ${pat.substring(0,40)}]`,match_count:1+Math.floor(Math.random()*3),context:`…${path} match…`});
+      }
+    });
+    if(mPats.length){
+      hits++;
+      report.regex_matched_urls.push({url:purl,title:`Demo — ${path}`,matched_patterns:mPats,matches:mObjs});
+      log('h',`HIT [${mPats.join(', ')}] → ${purl}`);
+    }else{log('',` ${String(count).padStart(2)} ${purl}`)}
+    report.pages.push({url:purl,title:`Demo — ${path}`,status_code:200,response_time_ms:150+Math.random()*200,matched_patterns:mPats});
+  },230);
+}
+
+/* ── Render results ────────────────────── */
+function finalise(rep){
+  S.report=rep;$('progBar').style.width='100%';
+  const wafSig=rep.waf_signals_detected||0;
+  const defs=[
+    {l:'Pages',v:rep.total_pages,c:''},
+    {l:'Regex Hits',v:rep.regex_total_hits||0,c:'hit'},
+    {l:'Forms',v:(rep.forms||[]).length,c:''},
+    {l:'No-CSRF',v:(rep.forms_without_csrf||[]).length,c:(rep.forms_without_csrf||[]).length?'wrn':''},
+    {l:'JS Secrets',v:(rep.js_sensitive_vars||[]).length,c:(rep.js_sensitive_vars||[]).length?'wrn':''},
+    {l:'APIs',v:(rep.api_endpoints||[]).length,c:(rep.api_endpoints||[]).length?'hit':''},
+    {l:'Emails',v:(rep.emails||[]).length,c:(rep.emails||[]).length?'hit':''},
+    {l:'Subdomains',v:(rep.subdomains||[]).length,c:''},
+    ...(wafSig?[{l:'WAF Blocked',v:wafSig,c:'wrn'}]:[]),
+    ...((rep.exposure_hits||[]).length?[{l:'Exposures',v:(rep.exposure_hits||[]).length,c:'wrn'}]:[]),
+    ...((rep.js_files||[]).length?[{l:'JS Parsed',v:(rep.js_files||[]).length,c:'hit'}]:[]),
+    ...((rep.parameters||[]).length?[{l:'Params',v:(rep.parameters||[]).length,c:''}]:[]),
+    ...((rep.sourcemaps||[]).length?[{l:'SourceMaps',v:(rep.sourcemaps||[]).length,c:'wrn'}]:[]),
+  ];
+  $('statsRow').innerHTML=defs.map(d=>`<div class="sc ${d.c}"><div class="sv">${d.v}</div><div class="sl">${d.l}</div></div>`).join('');
+  $('tcR').textContent=rep.regex_total_hits||0;
+  $('tcF').textContent=(rep.forms||[]).length;
+  $('tcS').textContent=(rep.js_sensitive_vars||[]).length;
+  $('tcA').textContent=(rep.api_endpoints||[]).length;
+  $('tcE').textContent=(rep.emails||[]).length;
+  $('tcPh').textContent=(rep.phones||[]).length;
+  $('tcSb').textContent=(rep.subdomains||[]).length;
+  $('tcPg').textContent=rep.total_pages;
+  renderHits(rep);renderForms(rep);
+  dlist('secretsCont',(rep.js_sensitive_vars||[]).map(v=>({ic:'!',tx:v,st:'color:var(--red)'})));
+  // Store resolved endpoints for filtering
+  S.apis = (rep.api_endpoints||[]).map(e=>{
+    let full = e;
+    if(e.startsWith('/') && rep.target){
+      try{ const u=new URL(rep.target); full=u.origin+e; }catch{}
+    }
+    return full;
+  });
+  renderApis(S.apis);
+  const apiMeta = $('apiMeta');
+  if(apiMeta){
+    const paths=S.apis.filter(e=>{ try{return new URL(e).pathname;} catch{return true;}});
+    apiMeta.textContent = `${S.apis.length} endpoint${S.apis.length!==1?'s':''} found — click to open in browser`;
+  }
+  dlist('emailsCont', (rep.emails||[]).map(e=>({ic:'✉',tx:e,lk:'mailto:'+e})));
+  dlist('phonesCont', (rep.phones||[]).map(p=>({ic:'☏',tx:p})));
+  dlist('subsCont',   (rep.subdomains||[]).map(s=>({ic:'↗',tx:s,lk:'https://'+s})));
+  // Enhanced pages list with status color, response time and API count
+  const pageCont=$('pagesCont');
+  if(pageCont){
+    const pages=rep.pages||[];
+    if(!pages.length){pageCont.innerHTML='<div style="color:var(--dim);font-size:10px;padding:8px 0">Nothing found.</div>';}
+    else{
+      pageCont.innerHTML=pages.map(pg=>{
+        const sc=pg.status_code;
+        const scCol=sc>=500?'var(--red)':sc>=400?'var(--yellow)':sc>=300?'var(--dim)':'var(--green)';
+        const rt=pg.response_time_ms;
+        const rtCol=rt>2000?'var(--red)':rt>800?'var(--yellow)':'var(--dim)';
+        const apis=(pg.api_endpoints||[]).length;
+        const secrets=(pg.js_variables||[]).length;
+        return `<div class="di" style="padding:5px 0;border-bottom:1px solid var(--border2)">
+          <span class="di-ic" style="color:${scCol}">${sc}</span>
+          <span class="di-tx" style="flex:1;min-width:0"><a href="${esc(pg.url)}" target="_blank" rel="noopener" style="color:var(--text);word-break:break-all">${esc(pg.url)}</a></span>
+          ${apis?`<span style="font-size:9px;color:var(--cyan);border:1px solid rgba(0,212,255,.3);padding:0 4px;border-radius:3px;flex-shrink:0">${apis} API</span>`:''}
+          ${secrets?`<span style="font-size:9px;color:var(--red);border:1px solid rgba(255,59,92,.3);padding:0 4px;border-radius:3px;flex-shrink:0">${secrets}🔑</span>`:''}
+          <span style="font-size:9px;color:${rtCol};flex-shrink:0;font-family:'Share Tech Mono',monospace">${rt.toFixed?rt.toFixed(0):rt}ms</span>
+        </div>`;
+      }).join('');
+    }
+  }
+  renderTech(rep.tech||{});
+  renderJsFiles(rep);
+  renderParams(rep);
+  renderSourcemaps(rep);
+  renderExposure(rep);
+
+  // Tab highlighting for high-value finds
+  const expHits=(rep.exposure_hits||[]).length;
+  const expCrit=(rep.exposure_hits||[]).filter(h=>h.severity==='critical'||h.severity==='high').length;
+  if($('tabExposure') && expCrit>0) $('tabExposure').classList.add('r');
+
+  const jsSecrets=(rep.js_files||[]).reduce((a,f)=>a+(f.secrets||[]).length,0);
+  if($('tabJS') && jsSecrets>0) $('tabJS').classList.add('r');
+
+  const interestingParams=(rep.parameters||[]).filter(p=>
+    ['id','file','path','redirect','url','next','return','token','key','password','secret','auth','cmd','exec'].includes((p.name||'').toLowerCase())
+  ).length;
+  if($('tabParams') && interestingParams>0) $('tabParams').classList.add('c');
+
+  const smCount=(rep.sourcemaps||[]).length;
+  if($('tabSM') && smCount>0) $('tabSM').classList.add('c');
+
+  // Update stats
+  $('tcPh').textContent=(rep.phones||[]).length;
+
+  setStatus(`✅ ${rep.total_pages} pages · ${rep.regex_total_hits||0} hits · ${expHits} exposures · ${(rep.js_files||[]).length} JS files`);
+}
+
+function renderHits(rep){
+  const hits=rep.regex_matched_urls||[];
+  const pct=rep.regex_pattern_hit_count||{};
+  $('patSum').innerHTML=Object.entries(pct).sort((a,b)=>b[1]-a[1])
+    .map(([p,c])=>`<div class="psum"><span class="pn">${esc(p)}</span><span style="color:var(--dim)">→</span><span class="pc">${c}</span><span style="color:var(--dim);font-size:8px">p</span></div>`).join('');
+  if(!hits.length){
+    $('regexCont').innerHTML=`<div class="empty"><div class="big">${S.pats.length?'🔍':'⚡'}</div><p>${S.pats.length?'No pages matched your patterns.':'No patterns set.<br>Add patterns on the left and re-run.'}</p></div>`;
+    return;
+  }
+  $('regexCont').innerHTML=hits.map((h,i)=>`
+    <div class="hrow">
+      <div class="hurl"><span style="color:var(--dim);flex-shrink:0">${i+1}.</span><a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.url)}</a></div>
+      <div class="htitle">${esc(h.title||'')}</div>
+      <div class="hpats">${(h.matched_patterns||[]).map(p=>`<span class="hptag">${esc(p)}</span>`).join('')}</div>
+      ${(h.matches||[]).map(m=>`
+        <div class="hmatch">${esc(m.match_text)}<span class="hct" style="margin-left:8px">${m.match_count}×</span></div>
+        <div class="hctx">Context: ${esc(m.context)}</div>`).join('')}
+    </div>`).join('');
+}
+
+function renderForms(rep){
+  const forms=rep.forms||[];
+  if(!forms.length){$('formsCont').innerHTML='<div class="empty"><div class="big">📝</div><p>No forms found.</p></div>';return}
+  $('formsCont').innerHTML=forms.map(f=>{
+    const flags=[];
+    if(f.has_password)   flags.push('<span class="ff ff-p">PASSWORD</span>');
+    if(f.has_file_upload)flags.push('<span class="ff ff-f">UPLOAD</span>');
+    flags.push(f.has_csrf_token?'<span class="ff ff-ok">CSRF ✓</span>':'<span class="ff ff-nc">NO CSRF</span>');
+    const names=(f.inputs||[]).filter(i=>i.name).map(i=>esc(i.name)).slice(0,10).join(', ');
+    const hidden=(f.inputs||[]).filter(i=>i.type==='hidden'&&i.value).map(i=>`${esc(i.name)}=${esc(i.value.substring(0,24))}`).join(', ');
+    return `<div class="fcard ${!f.has_csrf_token?'bad':''}">
+      <div class="ftop">
+        <span class="fmeth">${esc(f.method)}</span>
+        <span class="faction">${esc((f.action||'').substring(0,80))}</span>
+        <div class="fflags">${flags.join('')}</div>
+      </div>
+      ${names?`<div class="ffield">Fields: ${names}</div>`:''}
+      ${hidden?`<div class="ffield fhid">Hidden: ${hidden}</div>`:''}
+      ${f.enctype?`<div class="ffield">Enc: ${esc(f.enctype)}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function renderExposure(rep){
+  const hits = rep.exposure_hits || [];
+  const cont  = $('exposureCont');
+  const meta  = $('expMeta');
+  const tc    = $('tcExp');
+  if(tc) tc.textContent = hits.length;
+  if(!cont) return;
+
+  const crit  = hits.filter(h=>h.severity==='critical').length;
+  const high  = hits.filter(h=>h.severity==='high').length;
+  if(meta){
+    meta.textContent = hits.length
+      ? `${hits.length} exposed path${hits.length!==1?'s':''} found — ${crit} critical, ${high} high`
+      : 'No exposed sensitive paths detected.';
+  }
+
+  if(!hits.length){
+    cont.innerHTML='<div style="color:var(--dim);font-size:10px;padding:8px 0">No sensitive paths exposed. Good hygiene!</div>';
+    return;
+  }
+
+  const SEV_COLOR = {critical:'var(--red)',high:'var(--orange)',medium:'var(--yellow)',low:'var(--dim)',info:'var(--dim)'};
+  const SEV_ICON  = {critical:'💀',high:'🔴',medium:'🟡',low:'🔵',info:'ℹ'};
+
+  // Group by category
+  const cats = {};
+  hits.forEach(h=>{ (cats[h.category]=cats[h.category]||[]).push(h); });
+
+  cont._hits = hits;
+  cont.innerHTML = Object.entries(cats).map(([cat,items])=>`
+    <div style="margin-bottom:16px">
+      <div style="font-family:'Orbitron',monospace;font-size:9px;letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin-bottom:6px;display:flex;align-items:center;gap:6px">
+        <span style="flex:1">${esc(cat)}</span>
+        <span style="font-size:9px;color:var(--dim)">${items.length}</span>
+      </div>
+      ${items.map((h,i)=>{
+        const col = SEV_COLOR[h.severity]||'var(--dim)';
+        const icon = SEV_ICON[h.severity]||'•';
+        const soft = h.soft ? ' <span style="font-size:9px;color:var(--dim)">(auth required)</span>' : '';
+        return `<div class="di" style="padding:7px 0;border-bottom:1px solid var(--border2);align-items:flex-start;flex-direction:column" data-hit-url="${esc(h.full_url)}">
+          <div style="display:flex;align-items:center;gap:8px;width:100%">
+            <span style="font-size:13px;flex-shrink:0">${icon}</span>
+            <span style="font-size:9px;padding:1px 6px;border-radius:3px;border:1px solid ${col};color:${col};font-family:'Share Tech Mono',monospace;text-transform:uppercase;flex-shrink:0">${esc(h.severity)}</span>
+            <a href="${esc(h.full_url)}" target="_blank" rel="noopener" style="color:${col};font-family:'Share Tech Mono',monospace;font-size:11px;word-break:break-all;flex:1">${esc(h.path)}</a>
+            <span style="font-size:9px;color:var(--dim);flex-shrink:0;font-family:'Share Tech Mono',monospace">${h.status}${h.size?` · ${(h.size/1024).toFixed(1)}kb`:''}</span>
+            <button data-exp-url="${esc(h.full_url)}" class="exp-copy-btn" style="background:transparent;border:1px solid var(--border);color:var(--dim);font-size:9px;padding:1px 5px;border-radius:3px;cursor:pointer;flex-shrink:0;font-family:'Share Tech Mono',monospace">⎘</button>
+          </div>
+          <div style="font-size:10px;color:var(--dim);padding-left:30px;margin-top:3px">${esc(h.description)}${soft}</div>
+        </div>`;
+      }).join('')}
+    </div>
+  `).join('');
+
+  // Event delegation for copy buttons
+  cont.onclick = function(ev){
+    const btn = ev.target.closest('.exp-copy-btn');
+    if(!btn) return;
+    navigator.clipboard.writeText(btn.dataset.expUrl).then(()=>toast('Copied!')).catch(()=>{});
+  };
+}
+
+function copyExposure(){
+  if(!S.report) return toast('No results',true);
+  const hits = S.report.exposure_hits||[];
+  if(!hits.length) return toast('No exposure hits',true);
+  navigator.clipboard.writeText(hits.map(h=>h.full_url).join('\n')).then(()=>toast(`Copied ${hits.length} URLs`));
+}
+
+function saveExposure(){
+  if(!S.report) return toast('No results',true);
+  const hits = S.report.exposure_hits||[];
+  if(!hits.length) return toast('No exposure hits',true);
+  const lines = hits.map(h=>`[${h.severity.toUpperCase()}] ${h.status} ${h.full_url} — ${h.description}`);
+  dl(lines.join('\n'), 'exposure_hits.txt');
+  toast(`Saved ${hits.length} exposure hits`);
+}
+
+function renderJsFiles(rep){
+  const files = rep.js_files || [];
+  const cont  = $('jsFilesCont');
+  const meta  = $('jsMeta');
+  const tc    = $('tcJS');
+  if(tc) tc.textContent = files.length;
+  if(!cont) return;
+  if(meta) meta.textContent = files.length
+    ? `${files.length} JS file${files.length!==1?'s':''} parsed — click to open`
+    : 'No external JS files found.';
+  if(!files.length){
+    cont.innerHTML='<div style="color:var(--dim);font-size:10px;padding:8px 0">No JS files parsed.</div>';return;
+  }
+  cont._files = files;
+  cont.innerHTML = files.map((f,i)=>{
+    const eps   = (f.endpoints||[]).length;
+    const secs  = (f.secrets||[]).length;
+    const fwk   = (f.frameworks||[]).join(', ');
+    const kb    = f.size ? (f.size/1024).toFixed(1)+'kb' : '';
+    const fname = f.url.split('/').pop().split('?')[0];
+    return `<div style="border:1px solid var(--border2);border-radius:4px;padding:8px 10px;margin-bottom:8px;background:var(--bg2)">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <a href="${esc(f.url)}" target="_blank" rel="noopener" style="color:var(--cyan);font-family:'Share Tech Mono',monospace;font-size:11px;word-break:break-all;flex:1">${esc(fname)}</a>
+        ${kb?`<span style="color:var(--dim);font-size:9px;flex-shrink:0">${kb}</span>`:''}
+        ${fwk?`<span style="font-size:9px;padding:1px 5px;border-radius:3px;border:1px solid var(--purple);color:var(--purple)">${esc(fwk)}</span>`:''}
+        ${eps?`<span style="font-size:9px;padding:1px 5px;border-radius:3px;border:1px solid var(--cyan);color:var(--cyan)">${eps} endpoints</span>`:''}
+        ${secs?`<span style="font-size:9px;padding:1px 5px;border-radius:3px;border:1px solid var(--red);color:var(--red)">${secs} secrets</span>`:''}
+      </div>
+      <div style="font-size:10px;color:var(--dim);margin-top:4px;word-break:break-all">${esc(f.url)}</div>
+      ${eps?`<div style="margin-top:6px">${(f.endpoints||[]).slice(0,5).map(e=>`<div style="font-size:10px;color:var(--text);font-family:'Share Tech Mono',monospace;padding:1px 0"><a href="${esc(e)}" target="_blank" rel="noopener" style="color:var(--cyan)">${esc(e)}</a></div>`).join('')}${eps>5?`<div style="font-size:9px;color:var(--dim)">…${eps-5} more</div>`:''}</div>`:''}
+      ${secs?`<div style="margin-top:6px">${(f.secrets||[]).slice(0,3).map(s=>`<div style="font-size:10px;color:var(--red);font-family:'Share Tech Mono',monospace;padding:1px 0;word-break:break-all">${esc(s.slice(0,120))}</div>`).join('')}${secs>3?`<div style="font-size:9px;color:var(--dim)">…${secs-3} more</div>`:''}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function copyJsUrls(){
+  if(!S.report) return toast('No results',true);
+  const urls=(S.report.js_files||[]).map(f=>f.url);
+  if(!urls.length) return toast('No JS files',true);
+  navigator.clipboard.writeText(urls.join('\n')).then(()=>toast(`Copied ${urls.length} JS URLs`));
+}
+
+function saveJsFindings(){
+  if(!S.report) return toast('No results',true);
+  const files=S.report.js_files||[];
+  if(!files.length) return toast('No JS files',true);
+  const lines=[];
+  files.forEach(f=>{
+    lines.push('=== ' + f.url + ' ===');
+    (f.endpoints||[]).forEach(e=>lines.push('  ENDPOINT: '+e));
+    (f.secrets||[]).forEach(s=>lines.push('  SECRET: '+s));
+    lines.push('');
+  });
+  dl(lines.join('\n'),'js_findings.txt');
+  toast(`Saved findings from ${files.length} JS files`);
+}
+
+function renderParams(rep){
+  const params = rep.parameters || [];
+  const cont   = $('paramsCont');
+  const meta   = $('paramMeta');
+  const tc     = $('tcPar');
+  if(tc) tc.textContent = params.length;
+  if(!cont) return;
+  const gets   = params.filter(p=>p.method==='GET').length;
+  const posts  = params.filter(p=>p.method==='POST').length;
+  if(meta) meta.textContent = params.length
+    ? `${params.length} unique params — ${gets} GET · ${posts} POST`
+    : 'No URL parameters found.';
+  S.params = params;
+  _renderParamList(params);
+}
+
+function _renderParamList(params){
+  const cont = $('paramsCont');
+  if(!cont) return;
+  if(!params.length){
+    cont.innerHTML='<div style="color:var(--dim);font-size:10px;padding:8px 0">No parameters found.</div>';return;
+  }
+  // Group by method
+  const gets  = params.filter(p=>p.method==='GET');
+  const posts = params.filter(p=>p.method==='POST');
+  const renderGroup = (title, list, col) => !list.length ? '' :
+    `<div style="margin-bottom:14px">
+      <div style="font-family:'Orbitron',monospace;font-size:9px;letter-spacing:2px;color:${col};margin-bottom:6px">${title} (${list.length})</div>
+      ${list.map(p=>{
+        const risk = ['id','file','path','redirect','url','next','return','to','token','key','password','pass','secret','auth','cmd','exec','query','search','q'].includes(p.name.toLowerCase());
+        return `<div class="di" style="padding:5px 0;border-bottom:1px solid var(--border2)">
+          <span class="di-ic" style="color:${col}">›</span>
+          <span style="font-family:'Share Tech Mono',monospace;font-size:12px;color:${risk?'var(--yellow)':'var(--bright)'}">${esc(p.name)}</span>
+          ${risk?`<span style="font-size:8px;color:var(--yellow);border:1px solid var(--yellow);padding:0 3px;border-radius:2px;margin-left:4px;flex-shrink:0">INTERESTING</span>`:''}
+          <span style="font-size:10px;color:var(--dim);margin-left:auto;word-break:break-all;max-width:40%">${esc((p.value||'').slice(0,60))}</span>
+        </div>`;
+      }).join('')}
+    </div>`;
+  cont.innerHTML = renderGroup('GET', gets, 'var(--cyan)') + renderGroup('POST', posts, 'var(--orange)');
+}
+
+function filterParams(){
+  const q = ($('paramFilter')||{}).value || '';
+  if(!S.params) return;
+  const f = q ? S.params.filter(p=>p.name.toLowerCase().includes(q.toLowerCase())) : S.params;
+  _renderParamList(f);
+}
+
+function copyParams(){
+  if(!S.report) return toast('No results',true);
+  const ps=S.report.parameters||[];
+  if(!ps.length) return toast('No parameters',true);
+  navigator.clipboard.writeText(ps.map(p=>p.name).join('\n')).then(()=>toast(`Copied ${ps.length} param names`));
+}
+
+function saveParams(){
+  if(!S.report) return toast('No results',true);
+  const ps=S.report.parameters||[];
+  if(!ps.length) return toast('No parameters',true);
+  const lines=ps.map(p=>`[${p.method}] ${p.name}=${p.value||''} — ${p.url}`);
+  dl(lines.join('\n'),'parameters.txt');
+  toast(`Saved ${ps.length} parameters`);
+}
+
+function renderSourcemaps(rep){
+  const sms = rep.sourcemaps || [];
+  const tc  = $('tcSM');
+  if(tc) tc.textContent = sms.length;
+  dlist('smCont', sms.map(s=>({ic:'›', tx:s, lk:s})));
+}
+
+function renderApis(endpoints){
+  const cont=$('apisCont');
+  if(!cont)return;
+  if(!endpoints||!endpoints.length){
+    cont.innerHTML='<div style="color:var(--dim);font-size:10px;padding:8px 0">Nothing found.</div>';return;
+  }
+  // Filter out static assets that leaked through (css/js/font files)
+  const ASSET_EXT=/\.(css|js|woff2?|ttf|eot|png|jpg|svg|ico|map)(\?|$)/i;
+  const clean=endpoints.filter(e=>!ASSET_EXT.test(e));
+  if(!clean.length){
+    cont.innerHTML='<div style="color:var(--dim);font-size:10px;padding:8px 0">Nothing found.</div>';return;
+  }
+  // Store per-endpoint copy handlers using index to avoid inline JS quoting issues
+  cont._apis=clean;
+  cont.innerHTML=clean.map((e,i)=>{
+    // Classify endpoint type for badge — only match /vN/ path segments, not ?ver= query params
+    let badge='', bc='var(--dim)';
+    const lower=e.toLowerCase();
+    let pathname='';
+    try{pathname=new URL(e).pathname.toLowerCase();}catch{pathname=lower;}
+    if(/graphql|gql/.test(pathname)){badge='GraphQL';bc='var(--purple)';}
+    else if(/\/v\d+(\/|$)/.test(pathname)){const m=pathname.match(/\/(v\d+)(\/|$)/);badge=m?m[1].toUpperCase():'REST';bc='var(--cyan)';}
+    else if(/webhook/.test(pathname)){badge='Webhook';bc='var(--yellow)';}
+    else if(/internal|health|debug|admin/.test(pathname)){badge='Internal';bc='var(--red)';}
+    else if(/rest|api/.test(pathname)){badge='REST';bc='var(--cyan)';}
+    // Show path separately from origin
+    let display=e, origin='';
+    try{const u=new URL(e);origin=u.origin;display=u.pathname+(u.search||'');}catch{}
+    return `<div class="di" style="align-items:flex-start;flex-direction:column;padding:6px 0;border-bottom:1px solid var(--border2)">
+      <div style="display:flex;align-items:center;gap:6px;width:100%">
+        <span class="di-ic">›</span>
+        ${badge?`<span style="font-size:9px;padding:1px 5px;border-radius:3px;border:1px solid ${bc};color:${bc};font-family:'Share Tech Mono',monospace;flex-shrink:0">${badge}</span>`:''}
+        <a href="${esc(e)}" target="_blank" rel="noopener" style="color:var(--cyan);word-break:break-all;flex:1;font-size:11px">${esc(display)}</a>
+        <button data-api-idx="${i}" class="api-copy-btn" style="background:transparent;border:1px solid var(--border);color:var(--dim);font-size:9px;padding:1px 5px;border-radius:3px;cursor:pointer;flex-shrink:0;font-family:'Share Tech Mono',monospace" title="Copy URL">⎘</button>
+      </div>
+      ${origin?`<div style="font-size:9px;color:var(--dim);padding-left:22px;margin-top:2px">${esc(origin)}</div>`:''}
+    </div>`;
+  }).join('');
+  // Attach copy handlers via event delegation — avoids all inline JS quoting issues
+  cont.onclick=function(ev){
+    const btn=ev.target.closest('.api-copy-btn');
+    if(!btn)return;
+    const idx=parseInt(btn.dataset.apiIdx,10);
+    const url=cont._apis[idx];
+    if(url)navigator.clipboard.writeText(url).then(()=>toast('Copied!')).catch(()=>{});
+  };
+}
+
+function filterApis(){
+  const q=($('apiFilter')||{}).value||'';
+  if(!S.apis)return;
+  const filtered=q?S.apis.filter(e=>e.toLowerCase().includes(q.toLowerCase())):S.apis;
+  renderApis(filtered);
+}
+
+function dlist(id,items){
+  const el=$(id);
+  if(!items.length){el.innerHTML='<div style="color:var(--dim);font-size:10px;padding:8px 0">Nothing found.</div>';return}
+  el.innerHTML=items.map(it=>`
+    <div class="di">
+      <span class="di-ic" style="${it.st||''}">${it.ic||'›'}</span>
+      <span class="di-tx" style="${it.st||''}">${it.lk?`<a href="${esc(it.lk)}" target="_blank" rel="noopener">${esc(it.tx)}</a>`:esc(it.tx)}</span>
+      ${it.bd!==undefined?`<span class="di-bd">${it.bd}</span>`:''}
+    </div>`).join('');
+}
+
+function renderTech(t){
+  const flds=[['Server',t.server||'—'],['Powered By',t.powered_by||'—'],['CMS',t.cms||'—'],['WAF',t.waf||'—'],['CDN',t.cdn||'—'],['Frameworks',(t.frameworks||[]).join(', ')||'—']];
+  const grid=flds.map(([l,v])=>`<div class="tc"><div class="tclbl">${l}</div><div class="tcval${v==='—'?' e':''}">${esc(v)}</div></div>`).join('');
+  const miss=(t.missing_security_headers||[]);
+  const pres=Object.entries(t.security_headers||{});
+  $('techCont').innerHTML=
+    `<div class="tgrid">${grid}</div>`
+    +(miss.length?`<div style="font-size:11px;color:var(--red);margin-top:10px">⚠ Missing: ${miss.map(h=>`<code style="color:var(--yellow)">${esc(h)}</code>`).join(', ')}</div>`:'')
+    +(pres.length?`<div style="font-size:11px;color:var(--green);margin-top:5px">✓ Present: ${pres.map(([h])=>`<code style="color:var(--dim)">${esc(h)}</code>`).join(', ')}</div>`:'');
+}
+
+/* ── Save / copy ───────────────────────── */
+function copyHitUrls(){
+  if(!S.report)return toast('No results',true);
+  const urls=(S.report.regex_matched_urls||[]).map(h=>h.url);
+  if(!urls.length)return toast('No hits',true);
+  navigator.clipboard.writeText(urls.join('\n')).then(()=>toast(`Copied ${urls.length} URLs`));
+}
+function saveHitUrls(){
+  if(!S.report)return toast('No results',true);
+  const urls=(S.report.regex_matched_urls||[]).map(h=>h.url);
+  if(!urls.length)return toast('No hits',true);
+  dl(urls.join('\n'),'CREEPER_matched_urls.txt');toast(`Saved ${urls.length} URLs`);
+}
+function saveReport(){
+  if(!S.report)return toast('No results',true);
+  dl(JSON.stringify(S.report,null,2),'CREEPER_report.json');toast('Saved full JSON report');
+}
+function saveFormsCsv(){
+  if(!S.report)return toast('No results',true);
+  const forms=S.report.forms||[];
+  const hdr=['action','method','enctype','input_count','has_password','has_file_upload','has_csrf_token'];
+  const rows=forms.map(f=>hdr.map(k=>`"${String(f[k]??'').replace(/"/g,'""')}"`).join(','));
+  dl([hdr.join(','),...rows].join('\n'),'CREEPER_forms.csv');toast(`Saved ${forms.length} forms`);
+}
+function savePagesCsv(){
+  if(!S.report)return toast('No results',true);
+  const pages=S.report.pages||[];
+  const hdr=['url','title','status_code','response_time_ms','matched_patterns'];
+  const rows=pages.map(p=>hdr.map(k=>{const v=p[k];const s=Array.isArray(v)?v.join('|'):(v??'');return`"${String(s).replace(/"/g,'""')}"`}).join(','));
+  dl([hdr.join(','),...rows].join('\n'),'CREEPER_pages.csv');toast(`Saved ${pages.length} pages`);
+}
+function copyKey(k){
+  if(!S.report)return toast('No data',true);
+  let list=S.report[k]||[];
+  // For api_endpoints, expand bare paths to full URLs
+  if(k==='api_endpoints' && S.report.target){
+    try{
+      const origin=new URL(S.report.target).origin;
+      list=list.map(e=>e.startsWith('/')? origin+e : e);
+    }catch{}
+  }
+  navigator.clipboard.writeText(list.join('\n')).then(()=>toast(`Copied ${list.length} items`));
+}
+function saveKey(k,name){
+  if(!S.report)return toast('No data',true);
+  let list=S.report[k]||[];
+  if(k==='api_endpoints' && S.report.target){
+    try{const origin=new URL(S.report.target).origin;list=list.map(e=>e.startsWith('/')?origin+e:e);}catch{}
+  }
   dl(list.join('\n'),name);toast(`Saved ${list.length} items`);
 }
 

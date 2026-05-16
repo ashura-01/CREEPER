@@ -1,26 +1,20 @@
 """
 modules/models.py
-Shared dataclasses for CREEPER.  Every other module imports from here —
-nothing else imports from each other to keep deps one-directional.
+Shared dataclasses for CREEPER.
 """
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import List, Dict
+from typing import List, Dict, Optional
 
-
-# ── Regex engine output ───────────────────────────────────────────────────────
 
 @dataclass
 class RegexMatch:
-    """One regex pattern match found on a page."""
-    pattern:     str   # the pattern string
-    match_text:  str   # actual matched text (≤300 chars)
-    match_count: int   # total hits on this page
-    context:     str   # surrounding snippet (≤300 chars)
+    pattern:     str
+    match_text:  str
+    match_count: int
+    context:     str
 
-
-# ── Tech fingerprint ──────────────────────────────────────────────────────────
 
 @dataclass
 class TechFingerprint:
@@ -35,7 +29,27 @@ class TechFingerprint:
     missing_security_headers: List[str]  = field(default_factory=list)
 
 
-# ── Scraped page (one crawled URL) ────────────────────────────────────────────
+@dataclass
+class Parameter:
+    """A URL query parameter found during crawl."""
+    name:     str
+    value:    str
+    url:      str
+    method:   str = "GET"   # GET from URL, POST from form
+
+
+@dataclass
+class JSFile:
+    """A fetched and parsed JavaScript file."""
+    url:          str
+    size_bytes:   int       = 0
+    endpoints:    List[str] = field(default_factory=list)
+    secrets:      List[str] = field(default_factory=list)
+    subdomains:   List[str] = field(default_factory=list)
+    sourcemaps:   List[str] = field(default_factory=list)
+    framework_hints: List[str] = field(default_factory=list)
+    error:        str       = ""
+
 
 @dataclass
 class ScrapedPage:
@@ -56,6 +70,9 @@ class ScrapedPage:
     subdomains:       List[str]   = field(default_factory=list)
     api_endpoints:    List[str]   = field(default_factory=list)
     js_variables:     List[str]   = field(default_factory=list)
+    parameters:       List[Dict]  = field(default_factory=list)   # NEW
+    js_files:         List[str]   = field(default_factory=list)   # NEW — parsed JS URLs
+    sourcemaps:       List[str]   = field(default_factory=list)   # NEW
     tech:             TechFingerprint = field(default_factory=TechFingerprint)
     rendered:         bool        = False
     waf_blocked:      bool        = False

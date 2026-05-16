@@ -176,16 +176,125 @@ def extract_subdomains(html: str, base_domain: str) -> List[str]:
 
 # ── API endpoint extraction ───────────────────────────────────────────────────
 
-def extract_api_endpoints(html: str) -> List[str]:
+def extract_api_endpoints(html: str, base_url: str = "") -> List[str]:
     primary = RE_API.findall(html)
     # Second pass: bare path strings in script blocks
     extra   = re.findall(
         r'''["'](/(?:api|v\d+|graphql|rest|gql|rpc|endpoint|webhook)[^"'\s<>]{0,100})["']''',
         html,
     )
-    combined = list(dict.fromkeys(primary + extra))
-    return combined[:60]
+    # Third pass: fetch/axios/XHR calls with any path (broader than api/* only)
+    fetch_paths = re.findall(
+        r'''(?:fetch|axios\.(?:get|post|put|patch|delete|request)|\$\.(?:ajax|get|post))\s*\([\s\n]*["'`]([^"'`\s]{3,120})["'`]''',
+        html,
+    )
+    # Fourth pass: route definitions (common in React/Vue/Next/Express)
+    route_paths = re.findall(
+        r'''(?:path|route|href|to)\s*[=:]\s*["'`](/[a-zA-Z0-9/_\-.:?=&%]{3,100})["'`]''',
+        html,
+    )
+    # Fifth pass: XMLHttpRequest .open() calls
+    xhr_paths = re.findall(
+        r'''\.open\s*\(\s*["'`](?:GET|POST|PUT|PATCH|DELETE)["'`]\s*,\s*["'`]([^"'`\s]{3,120})["'`]''',
+        html,
+        re.IGNORECASE,
+    )
+    combined = list(dict.fromkeys(primary + extra + fetch_paths + route_paths + xhr_paths))
+    # Filter out obvious non-endpoints
+    STATIC_EXTS = (".png",".jpg",".jpeg",".gif",".svg",".css",".ico",".woff",
+                    ".woff2",".ttf",".eot",".otf",".map",".mp4",".webp",".pdf")
+    combined = [
+        e for e in combined
+        if not any(e.split("?")[0].endswith(ext) for ext in STATIC_EXTS)
+        and not e.startswith("//")
+        and len(e) > 2
+        # exclude query-string-only version patterns like ?ver=8.4.5
+        and not re.match(r'^/v\d+/[a-z].*\.(css|js)(\?|$)', e, re.IGNORECASE)
+    ]
 
+    # Resolve bare paths to absolute URLs using the page origin
+    if base_url:
+        parsed  = urlparse(base_url)
+        origin  = f"{parsed.scheme}://{parsed.netloc}"
+        resolved = []
+        for ep in combined:
+            if ep.startswith("/") and not ep.startswith("//"):
+                resolved.append(origin + ep)
+            elif ep.startswith(("http://", "https://")):
+                resolved.append(ep)
+            else:
+                resolved.append(ep)
+        return list(dict.fromkeys(resolved))[:80]
+
+    return combined[:80]
+
+
+
+
+# -- URL parameter extraction --------------------------------------------------
+
+_RE_JS_URL_PARAMS = re.compile(
+    r'["\'"`][^"\'"`]*[?]([a-zA-Z0-9_\-]{2,40}=[^&"\'"`\s]{0,80}'
+    r'(?:&[a-zA-Z0-9_\-]{2,40}=[^&"\'"`\s]{0,80})*)["\'"`]'
+)
+
+
+def extract_parameters(soup: BeautifulSoup, page_url: str, html: str) -> List[Dict]:
+    from urllib.parse import urlparse as _up, parse_qs, urljoin
+
+    seen: Dict[str, Dict] = {}
+
+    def add(name: str, value: str, url: str, method: str = "GET"):
+        if not name or len(name) > 80 or name.startswith("_"):
+            return
+        key = f"{method}:{name}"
+        if key not in seen:
+            seen[key] = {"name": name, "value": value[:200], "url": url, "method": method}
+
+    # Current page URL params
+    try:
+        for k, vs in parse_qs(_up(page_url).query).items():
+            add(k, vs[0] if vs else "", page_url, "GET")
+    except Exception:
+        pass
+
+    # All anchor href params
+    for a in soup.find_all("a", href=True):
+        href = a["href"].strip()
+        if "?" not in href:
+            continue
+        try:
+            full = urljoin(page_url, href)
+            for k, vs in parse_qs(_up(full).query).items():
+                add(k, vs[0] if vs else "", full, "GET")
+        except Exception:
+            pass
+
+    # Form inputs
+    for form in soup.find_all("form"):
+        action = form.get("action", "")
+        try:
+            action_url = urljoin(page_url, action) if action else page_url
+        except Exception:
+            action_url = page_url
+        method = form.get("method", "GET").upper()
+        for inp in form.find_all(["input", "textarea", "select"]):
+            iname = inp.get("name", "")
+            itype = inp.get("type", "text").lower()
+            ival  = inp.get("value", "") or inp.get("placeholder", "")
+            if iname and itype not in ("hidden", "submit", "button", "image", "reset"):
+                add(iname, ival, action_url, method)
+
+    # JS string URL params
+    for m in _RE_JS_URL_PARAMS.finditer(html):
+        qs_str = m.group(1)
+        try:
+            for k, vs in parse_qs(qs_str).items():
+                add(k, vs[0] if vs else "", page_url, "GET")
+        except Exception:
+            pass
+
+    return list(seen.values())[:200]
 
 # ── JS variable / secret extraction ──────────────────────────────────────────
 

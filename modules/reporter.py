@@ -19,6 +19,7 @@ from rich.table import Table
 from rich.text import Text
 
 from .models import ScrapedPage
+from .exposure import ExposureHit
 
 logger  = logging.getLogger("CREEPER.reporter")
 console = Console()
@@ -31,6 +32,8 @@ def build_report(
     results: List[ScrapedPage],
     regex_patterns: List[str],
     regex_errors:   List[str],
+    exposure_hits:  List[ExposureHit] = None,
+    js_results:     list = None,
 ) -> Dict:
     all_emails:        Set[str] = set()
     all_phones:        Set[str] = set()
@@ -40,6 +43,9 @@ def build_report(
     all_api_endpoints: Set[str] = set()
     all_js_vars:       Set[str] = set()
     all_external:      Set[str] = set()
+    all_parameters:    Dict[str, Dict] = {}   # key -> param dict
+    all_js_files:      List[Dict] = []        # parsed JS file results
+    all_sourcemaps:    Set[str] = set()
     pages_by_status:   Dict[int, int] = {}
     tech_summary:      Dict = {}
     response_times:    List[float] = []
@@ -57,6 +63,12 @@ def build_report(
         all_api_endpoints.update(page.api_endpoints)
         all_js_vars.update(page.js_variables)
         all_external.update(page.external_links)
+        all_sourcemaps.update(getattr(page, 'sourcemaps', []))
+        # Parameters: deduplicate by method:name
+        for p in getattr(page, 'parameters', []):
+            pk = f"{p['method']}:{p['name']}"
+            if pk not in all_parameters:
+                all_parameters[pk] = p
         response_times.append(page.response_time_ms)
         pages_by_status[page.status_code] = (
             pages_by_status.get(page.status_code, 0) + 1
@@ -135,10 +147,38 @@ def build_report(
         "subdomains":          sorted(all_subdomains),
         "api_endpoints":       sorted(all_api_endpoints),
         "js_sensitive_vars":   sorted(all_js_vars),
+        "js_files":            [
+            {
+                "url":       r["url"] if isinstance(r, dict) else r.js_url,
+                "endpoints": r["endpoints"] if isinstance(r, dict) else r.endpoints,
+                "secrets":   r["secrets"] if isinstance(r, dict) else r.secrets,
+                "size":      r["size_bytes"] if isinstance(r, dict) else r.size_bytes,
+                "frameworks": r.get("framework_hints",[]) if isinstance(r, dict) else r.framework_hints,
+            }
+            for r in (js_results or [])
+        ][:200],
+        "parameters":          sorted(all_parameters.values(), key=lambda p: p["name"])[:300],
+        "sourcemaps":          sorted(all_sourcemaps)[:100],
         "external_links":      sorted(all_external)[:300],
         "pages_by_status":     pages_by_status,
         "tech":                tech_summary,
         "pages":               [asdict(p) for p in results],
+        "exposure_hits":       [
+            {
+                "path":        h.path,
+                "full_url":    h.full_url,
+                "status":      h.status,
+                "severity":    h.severity,
+                "category":    h.category,
+                "description": h.description,
+                "size":        h.size,
+                "redirect_to": h.redirect_to,
+                "soft":        h.soft,
+            }
+            for h in (exposure_hits or [])
+        ],
+        "exposure_critical":   sum(1 for h in (exposure_hits or []) if h.severity == "critical"),
+        "exposure_high":       sum(1 for h in (exposure_hits or []) if h.severity == "high"),
     }
 
 

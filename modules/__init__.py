@@ -10,6 +10,7 @@ from .orchestrator import AsyncOSINTScraper
 from .reporter import build_report, format_report
 from .models import ScrapedPage, TechFingerprint, RegexMatch
 from .regex_engine import RegexEngine
+from .exposure import probe_paths, ExposureHit, PROBE_PATHS
 
 __all__ = [
     "AsyncOSINTScraper",
@@ -19,4 +20,6 @@ __all__ = [
     "TechFingerprint",
     "RegexMatch",
     "RegexEngine",
+    "probe_paths",
+    "ExposureHit",
 ]

@@ -35,6 +35,7 @@ from .reporter import build_report
 from .spider import Spider
 from .stealth import DomainRateLimiter, StealthHeaders
 from .ninja import NinjaStealth
+from .exposure import probe_paths, ExposureHit
 
 # Optional Playwright
 try:
@@ -173,11 +174,24 @@ class AsyncOSINTScraper:
             if pw_browser:
                 await pw_browser.close()
 
+            # Exposure probe — runs after crawl, reuses same session
+            logger.info("Running exposure probe on %s", start_url)
+            exposure_hits = await probe_paths(
+                base_url=start_url,
+                session=session,
+                semaphore=semaphore,
+                concurrency=min(self.concurrency * 2, 20),
+                timeout=8,
+                custom_headers=self.custom_headers,
+            )
+
         report = build_report(
             start_url=start_url,
             results=spider.results,
             regex_patterns=self.regex_engine.raw_patterns,
             regex_errors=self.regex_engine.errors,
+            exposure_hits=exposure_hits,
+            js_results=getattr(spider, 'js_results', []),
         )
         export(report, output_dir, export_formats)
         return report
